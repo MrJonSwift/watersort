@@ -53,7 +53,8 @@ export interface ParticleView {
 
 export interface Scene {
   tubes: readonly TubeView[]
-  stream: StreamView | null
+  /** One entry per in-flight pour that is streaming; usually 0 or 1. */
+  streams: readonly StreamView[]
   particles: readonly ParticleView[]
   time: number
 }
@@ -73,7 +74,7 @@ const GUIDE_WIDTH_PX = 1
 
 export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene): void {
   for (const tube of scene.tubes) drawTube(ctx, tube)
-  if (scene.stream) drawStream(ctx, scene.stream)
+  for (const stream of scene.streams) drawStream(ctx, stream)
   for (const particle of scene.particles) drawParticle(ctx, particle)
 }
 
