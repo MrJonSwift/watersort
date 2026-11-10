@@ -37,6 +37,16 @@ function movesCopy(count: number): string {
   return `${count} ${count === 1 ? 'move' : 'moves'}`
 }
 
+/** Undo button text: the remaining budget, visible at a glance. */
+export function undoCopy(credits: number): string {
+  return `Undo (${credits})`
+}
+
+/** What the undo button tells assistive tech, including the budget. */
+export function undoAria(credits: number): string {
+  return `Undo, ${credits} left`
+}
+
 /** Banner text for a finished board: the last level reads as the end of the run. */
 export function bannerCopy(level: number, maxLevel: number, moves: number): string {
   return level >= maxLevel
@@ -127,7 +137,6 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
   const undoBtn = document.createElement('button')
   undoBtn.type = 'button'
   undoBtn.className = 'btn'
-  undoBtn.textContent = 'Undo'
   undoBtn.addEventListener('click', () => handlers.onUndo())
   const primaryBtn = document.createElement('button')
   primaryBtn.type = 'button'
@@ -177,7 +186,9 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
       levelLine.textContent = `Level ${view.level}`
       moves.textContent = movesCopy(state.moves)
       primaryBtn.textContent = PRIMARY_COPY[view.primary]
-      undoBtn.disabled = state.history.length === 0
+      undoBtn.textContent = undoCopy(view.undoCredits)
+      undoBtn.setAttribute('aria-label', undoAria(view.undoCredits))
+      undoBtn.disabled = view.undoCredits <= 0 || state.history.length === 0
       soundToggle.set(settings.sound)
       pourToggle.set(settings.pourFx)
 

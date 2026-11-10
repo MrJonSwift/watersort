@@ -304,6 +304,108 @@ describe('undo and restart', () => {
   })
 })
 
+describe('undo budget', () => {
+  /**
+   * One pour and its undo: both tubes keep a unit of colour 1, so the pour
+   * repeats. Each cycle spends exactly one credit.
+   */
+  function spendOne(h: Harness): void {
+    h.controller.tap(0)
+    h.controller.tap(1)
+    h.controller.undo()
+  }
+
+  it('counts down from 5 and renders the count on every view', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(5)
+
+    for (let spent = 1; spent <= 5; spent++) {
+      spendOne(h)
+      expect(h.updates.at(-1)?.view.undoCredits).toBe(5 - spent)
+    }
+    // The fifth undo still applied: the pour before it was taken back.
+    expect(h.controller.state.moves).toBe(0)
+    expect(h.events[h.events.length - 1].type).toBe('undo')
+  })
+
+  it('exhausts to a no-op: no event, no state change, no credit spent', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    for (let spent = 0; spent < 5; spent++) spendOne(h)
+
+    h.controller.tap(0)
+    h.controller.tap(1)
+    expect(h.controller.state.moves).toBe(1)
+    const calls = h.events.length
+    h.controller.undo()
+    expect(h.events).toHaveLength(calls)
+    expect(h.controller.state.moves).toBe(1)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(0)
+  })
+
+  it('an undo with no history does not consume a credit', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    h.controller.undo() // nothing applied
+    spendOne(h)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(4)
+  })
+
+  it('restart restores the budget', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    h.controller.tap(0)
+    h.controller.tap(1)
+    h.controller.undo()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(4)
+
+    h.controller.restart()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(5)
+  })
+
+  it('next level and play again restore the budget', () => {
+    const h = harness([[1, 1], [1, 1]])
+    h.controller.start()
+    h.controller.tap(0) // select
+    h.controller.tap(1) // completes both tubes: won
+    expect(h.controller.state.won).toBe(true)
+    h.controller.undo()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(4)
+
+    h.controller.nextLevel()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(5)
+  })
+
+  it('play again from the last level restores the budget', () => {
+    const h = harness([[1, 1], [1, 1]], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
+    h.controller.start()
+    h.controller.tap(0)
+    h.controller.tap(1)
+    h.controller.undo()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(4)
+
+    h.controller.playAgain()
+    expect(h.controller.level).toBe(1)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(5)
+  })
+
+  it('a rapid burst mixing pours and undo applies in order', () => {
+    const h = harness([[1, 1], [1, 1, 1], []])
+    h.controller.start()
+    h.controller.tap(0)
+    h.controller.tap(1) // pour 0→1 (1 unit: only room for one)
+    h.controller.undo() // back to start, credit 4
+    h.controller.tap(0)
+    h.controller.tap(1) // pour again
+    h.controller.tap(0) // the source keeps one unit, so this selects it
+    h.controller.tap(2) // pour 1 unit into the empty tube
+    expect(h.controller.state.moves).toBe(2)
+    expect(h.controller.state.tubes.map((t) => t.colors)).toEqual([[], [1, 1, 1, 1], [1]])
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(4)
+  })
+})
+
 describe('feedback', () => {
   it('completes a tube with a chime, but does not call it a win', () => {
     const h = harness([
@@ -394,6 +496,7 @@ describe('levels and progress', () => {
       level: 3,
       maxLevel: MAX_LEVEL,
       primary: 'restart',
+      undoCredits: 5,
     })
   })
 

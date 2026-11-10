@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_LEVEL } from './levels'
-import { bannerCopy, tubeColumns } from './ui'
+import { bannerCopy, tubeColumns, undoAria, undoCopy } from './ui'
 
 describe('bannerCopy', () => {
   it('reports the moves for a mid-run win', () => {
@@ -10,6 +10,15 @@ describe('bannerCopy', () => {
 
   it('names the level count on the last level', () => {
     expect(bannerCopy(MAX_LEVEL, MAX_LEVEL, 24)).toBe(`All ${MAX_LEVEL} levels complete!`)
+  })
+})
+
+describe('undoCopy and undoAria', () => {
+  it('show the remaining budget in both places', () => {
+    expect(undoCopy(5)).toBe('Undo (5)')
+    expect(undoCopy(0)).toBe('Undo (0)')
+    expect(undoAria(5)).toBe('Undo, 5 left')
+    expect(undoAria(0)).toBe('Undo, 0 left')
   })
 })
 
