@@ -27,11 +27,19 @@ import type { StagePrefs } from './water/stage'
 /** What the single primary button does for the current session. */
 export type PrimaryAction = 'restart' | 'next' | 'play-again'
 
+/**
+ * Free undos per level. Earned credits arrive in ticket 08; this is the
+ * difficulty pin, not a persistence setting, so it lives with the session.
+ */
+export const UNDO_CREDITS = 5
+
 /** Presentation-only view of the session, passed alongside the game state. */
 export interface UIView {
   level: number
   maxLevel: number
   primary: PrimaryAction
+  /** Undos left this level; the UI renders it on the undo button. */
+  undoCredits: number
 }
 
 export interface ControllerUI {
@@ -130,12 +138,14 @@ export function createController(ports: ControllerPorts): Controller {
   let level = progress.level
   let state: GameState = ports.board(level)
   let settings: Settings = ports.settings.load()
+  let undoCredits = UNDO_CREDITS
 
   function viewFor(next: GameState = state): UIView {
     return {
       level,
       maxLevel: MAX_LEVEL,
       primary: primaryAction(next, level),
+      undoCredits,
     }
   }
 
@@ -179,6 +189,7 @@ export function createController(ports: ControllerPorts): Controller {
 
   function restart(): void {
     // Same level, same deterministic board: only moves and history reset.
+    undoCredits = UNDO_CREDITS
     commit(state, ports.board(level), { type: 'new' })
   }
 
@@ -190,6 +201,7 @@ export function createController(ports: ControllerPorts): Controller {
     level += 1
     progress = { ...progress, level }
     ports.progress.save(progress)
+    undoCredits = UNDO_CREDITS
     commit(state, ports.board(level), { type: 'new' })
   }
 
@@ -197,6 +209,7 @@ export function createController(ports: ControllerPorts): Controller {
     level = 1
     progress = { ...progress, level }
     ports.progress.save(progress)
+    undoCredits = UNDO_CREDITS
     commit(state, ports.board(level), { type: 'new' })
   }
 
@@ -229,6 +242,7 @@ export function createController(ports: ControllerPorts): Controller {
 
     start() {
       // The UI must build the tubes before the stage can measure them.
+      undoCredits = UNDO_CREDITS
       ports.ui.update(state, settings, viewFor())
       ports.stage.setPrefs({ pourFx: settings.pourFx })
       ports.audio.setEnabled(settings.sound)
@@ -250,9 +264,11 @@ export function createController(ports: ControllerPorts): Controller {
     },
 
     undo() {
+      if (undoCredits === 0) return
       const before = state
       const next = applyUndo(before)
-      if (next === before) return
+      if (next === before) return // no history: nothing used, nothing consumed
+      undoCredits -= 1
       commit(before, next, { type: 'undo' })
     },
 
