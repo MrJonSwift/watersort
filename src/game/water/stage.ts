@@ -12,9 +12,11 @@
  *   - a render loop that sleeps once the simulation settles.
  *
  * The stage is presentation only. It never reports whether it is busy, and
- * nothing outside it waits for an animation: a new event arriving mid-pour
- * preempts the old one. The game state is already correct by the time an
- * event gets here, so the stage is always catching up, never deciding.
+ * nothing outside it waits for an animation. Multiple pours with no shared
+ * tube run at the same time; an event that touches a tube already in flight
+ * preempts exactly that pour, and lands it against the state that produced it.
+ * The game state is already correct by the time an event gets here, so the
+ * stage is always catching up, never deciding.
  *
  * It adapts between the pure layers: `physics` (simulation state),
  * `tuning` (timings) and `renderer` (painting a `Scene`).
@@ -69,8 +71,10 @@ export interface Stage {
    * Drive presentation from a game event and the resulting state.
    *
    * Deliberately the only entry point, and deliberately silent about whether
-   * a previous animation is still running: it preempts instead. Nothing may
-   * ask the stage whether it is busy, because nothing may gate input on it.
+   * animations are running. A new pour lands only the in-flight pours that
+   * share one of its tubes; disjoint pours keep animating side by side.
+   * Nothing may ask the stage whether it is busy, because nothing may gate
+   * input on it.
    */
   dispatch(event: GameEvent, state: GameState): void
   setPrefs(prefs: StagePrefs): void
@@ -92,6 +96,7 @@ interface TubeNode {
   popUntil: number
 }
 
+/** One in-flight pour choreography. Tubes never overlap between live pours. */
 interface PourAnim {
   from: number
   to: number
@@ -141,7 +146,8 @@ export function createStage(host: HTMLElement): Stage {
   const pending: PendingEffect[] = []
   let prefs: StagePrefs = { pourFx: true }
   let state: GameState | null = null
-  let pour: PourAnim | null = null
+  /** In-flight pour choreographies. Disjoint pours coexist in this set. */
+  const pours = new Set<PourAnim>()
   let nodes: TubeNode[] = []
   let complete: boolean[] = []
   let won = false
@@ -204,7 +210,7 @@ export function createStage(host: HTMLElement): Stage {
   /* ---------------------------------------------------------- loop ------- */
 
   function needsFrame(): boolean {
-    if (pour || pending.length > 0) return true
+    if (pours.size > 0 || pending.length > 0) return true
     if (!isSettled(sim)) return true
     for (const node of nodes) {
       if (!poseReached(node.pose, node.target)) return true
@@ -263,7 +269,7 @@ export function createStage(host: HTMLElement): Stage {
           opacity: 1,
         }
       }),
-      stream: streamView(now),
+      streams: streamViews(now),
       particles: sim.particles,
       time: now / 1000,
     }
@@ -272,60 +278,73 @@ export function createStage(host: HTMLElement): Stage {
 
   /* --------------------------------------------------------- choreography ---- */
 
+  /**
+   * The pour whose stream most recently started — used to time the delayed
+   * completion effects so sparks land after the pour that completed the tube.
+   */
+  function latestPourEnd(): number | null {
+    let end: number | null = null
+    for (const anim of pours) {
+      if (end === null || anim.pourEnd > end) end = anim.pourEnd
+    }
+    return end
+  }
+
+  /** Advance every in-flight pour. Concurrency needs no coordination: the
+   * landing rule already guarantees no tube is shared, so each pour touches
+   * only its own pair of sim tubes and poses. */
   function advancePour(now: number): void {
-    const anim = pour
-    if (!anim) return
-
-    if (!anim.streaming && now >= anim.liftEnd) {
-      anim.streaming = true
-      const toNode = nodes[anim.to]
-      if (toNode && state) {
-        syncTube(sim, anim.from, anim.capacity, anim.fromUnits)
-        syncTube(sim, anim.to, anim.capacity, anim.toUnits)
-        waveImpulse(sim, anim.to, IMPACT_X_FRAC, IMPACT_IMPULSE)
+    for (const anim of pours) {
+      if (!anim.streaming && now >= anim.liftEnd) {
+        anim.streaming = true
+        const toNode = nodes[anim.to]
+        if (toNode && state) {
+          syncTube(sim, anim.from, anim.capacity, anim.fromUnits)
+          syncTube(sim, anim.to, anim.capacity, anim.toUnits)
+          waveImpulse(sim, anim.to, IMPACT_X_FRAC, IMPACT_IMPULSE)
+        }
       }
-    }
 
-    if (anim.streaming && now >= anim.pourEnd) {
-      anim.streaming = false
-      const impact = impactPoint(anim)
-      if (impact) spawnDroplets(sim, impact.x, impact.y, anim.color, IMPACT_DROPLETS, { speed: 160 })
-      const fromNode = nodes[anim.from]
-      if (fromNode) fromNode.target = { ...REST_POSE }
-    }
-
-    if (anim.streaming && now - anim.lastDropAt >= TRICKLE_MS) {
-      anim.lastDropAt = now
-      const impact = impactPoint(anim)
-      if (impact) {
-        spawnDroplets(sim, impact.x, impact.y, anim.color, TRICKLE_DROPLETS, {
-          spread: 14,
-          speed: 130,
-          size: 2.6,
-        })
+      if (anim.streaming && now >= anim.pourEnd) {
+        anim.streaming = false
+        const impact = impactPoint(anim)
+        if (impact) spawnDroplets(sim, impact.x, impact.y, anim.color, IMPACT_DROPLETS, { speed: 160 })
+        const fromNode = nodes[anim.from]
+        if (fromNode) fromNode.target = { ...REST_POSE }
       }
-    }
 
-    if (now >= anim.end) pour = null
+      if (anim.streaming && now - anim.lastDropAt >= TRICKLE_MS) {
+        anim.lastDropAt = now
+        const impact = impactPoint(anim)
+        if (impact) {
+          spawnDroplets(sim, impact.x, impact.y, anim.color, TRICKLE_DROPLETS, {
+            spread: 14,
+            speed: 130,
+            size: 2.6,
+          })
+        }
+      }
+
+      if (now >= anim.end) pours.delete(anim)
+    }
   }
 
   /**
-   * Land an in-flight pour immediately, so a newer event can take over.
+   * Land one in-flight pour immediately, so a newer event can take its tubes.
    *
    * `landed` is the state the old pour produced — the one in force before the
    * new event — so the tubes snap to where that pour actually left them, never
    * to where the new event is going. The stream disappears and the source
    * returns to rest. In-flight particles are left alone; they die on their own.
    *
-   * Clearing `pour` first is what keeps a stale `pourEnd` from firing into the
-   * animation that replaces it: every timeline step checks the slot.
+   * Removing the pour from the set first is what keeps a stale `pourEnd` from
+   * firing into the animation that replaces it: every timeline step checks the
+   * set membership.
    */
-  function finishPour(landed: GameState | null): void {
-    const anim = pour
-    if (!anim) return
-    pour = null
+  function landPour(anim: PourAnim, landed: GameState | null): void {
+    pours.delete(anim)
     // Defensive only: a pour can only exist once a board has been dispatched,
-    // so `landed` is set in practice. Clearing the slot above is the part that
+    // so `landed` is set in practice. Clearing the set above is the part that
     // matters, and it has already happened.
     if (!landed) return
 
@@ -338,6 +357,29 @@ export function createStage(host: HTMLElement): Stage {
     if (fromNode) fromNode.target = { ...REST_POSE }
   }
 
+  /** Land every in-flight pour (`undo` and `new` replace the whole board). */
+  function landAllPours(landed: GameState | null): void {
+    for (const anim of [...pours]) landPour(anim, landed)
+  }
+
+  /**
+   * Land the pours a new event conflicts with, and only those:
+   * a pour event conflicts with the in-flight pours that touch one of its
+   * tubes, undo and new board events conflict with all of them.
+   */
+  function landConflictingPours(event: GameEvent, landed: GameState | null): void {
+    if (event.type === 'undo' || event.type === 'new') {
+      landAllPours(landed)
+      return
+    }
+    if (event.type !== 'pour') return
+    for (const anim of [...pours]) {
+      if (anim.from === event.from || anim.to === event.from || anim.from === event.to || anim.to === event.to) {
+        landPour(anim, landed)
+      }
+    }
+  }
+
   function impactPoint(anim: PourAnim): { x: number; y: number } | null {
     const dest = nodes[anim.to]
     const tube = sim.tubes[anim.to]
@@ -348,24 +390,28 @@ export function createStage(host: HTMLElement): Stage {
     return { x, y }
   }
 
-  function streamView(now: number): StreamView | null {
-    const anim = pour
-    if (!anim || !anim.streaming || now >= anim.pourEnd) return null
-    const from = nodes[anim.from]
-    const impact = impactPoint(anim)
-    if (!from || !impact) return null
+  /** Collect the visible stream segments of every streaming pour. */
+  function streamViews(now: number): StreamView[] {
+    const views: StreamView[] = []
+    for (const anim of pours) {
+      if (!anim.streaming || now >= anim.pourEnd) continue
+      const from = nodes[anim.from]
+      const impact = impactPoint(anim)
+      if (!from || !impact) continue
 
-    const spout = spoutLocal(from.rect, from.pose.rot)
-    const lip = localToCanvas(from.rect, from.pose, spout.x, spout.y)
-    return {
-      fromX: lip.x,
-      fromY: lip.y,
-      toX: impact.x,
-      toY: impact.y,
-      width: from.rect.w * 0.38,
-      color: anim.color,
-      time: now / 1000,
+      const spout = spoutLocal(from.rect, from.pose.rot)
+      const lip = localToCanvas(from.rect, from.pose, spout.x, spout.y)
+      views.push({
+        fromX: lip.x,
+        fromY: lip.y,
+        toX: impact.x,
+        toY: impact.y,
+        width: from.rect.w * 0.38,
+        color: anim.color,
+        time: now / 1000,
+      })
     }
+    return views
   }
 
   /* ------------------------------------------------------------- poses ---- */
@@ -382,6 +428,14 @@ export function createStage(host: HTMLElement): Stage {
     })
   }
 
+  /** The hover pose of the pour this tube is pouring from, if any is live. */
+  function hoverPourFor(index: number, now: number): Pose | null {
+    for (const anim of pours) {
+      if (anim.from === index && now < anim.pourEnd) return anim.hover
+    }
+    return null
+  }
+
   function applyPoseTarget(node: TubeNode, index: number, now: number): void {
     const selected = state?.selected === index
     const target: Pose = {
@@ -391,11 +445,12 @@ export function createStage(host: HTMLElement): Stage {
       scale: selected ? 1.05 : 1,
     }
 
-    if (pour && pour.from === index && now < pour.pourEnd) {
-      target.dx = pour.hover.dx
-      target.dy = pour.hover.dy
-      target.rot = pour.hover.rot
-      target.scale = pour.hover.scale
+    const hover = hoverPourFor(index, now)
+    if (hover) {
+      target.dx = hover.dx
+      target.dy = hover.dy
+      target.rot = hover.rot
+      target.scale = hover.scale
     }
 
     if (now < node.shakeUntil) {
@@ -415,10 +470,10 @@ export function createStage(host: HTMLElement): Stage {
   function dispatch(event: GameEvent, next: GameState): void {
     const previous = state
 
-    // A new event always wins. The previous state is the one the in-flight
-    // pour produced, so preempting lands that pour where it really ended and
-    // can never leave the old animation's levels showing.
-    finishPour(previous)
+    // Land only what this event conflicts with. A disjoint pour keeps flying;
+    // everything that touches a tube the new event uses snaps to `previous`,
+    // the state all in-flight pours have already been applied to.
+    landConflictingPours(event, previous)
     state = next
 
     if (nodes.length !== next.tubes.length) measure()
@@ -436,7 +491,7 @@ export function createStage(host: HTMLElement): Stage {
         if (animatePourFx) {
           const hover = hoverPose(fromNode.rect, toNode.rect, boardCenterX, TILT_DEG, SPOUT_GAP)
           const start = performance.now()
-          pour = {
+          const pourAnim: PourAnim = {
             from: event.from,
             to: event.to,
             color: event.color,
@@ -450,6 +505,7 @@ export function createStage(host: HTMLElement): Stage {
             streaming: false,
             lastDropAt: 0,
           }
+          pours.add(pourAnim)
           fromNode.target = hover
         } else {
           syncTube(sim, event.from, next.capacity, next.tubes[event.from].colors, true)
@@ -473,7 +529,7 @@ export function createStage(host: HTMLElement): Stage {
       }
 
       // Undo and a new board replace everything outright: snap, then let the
-      // tubes drop in. `finishPour` has already dealt with any in-flight pour.
+      // tubes drop in. `landConflictingPours` has already landed everything.
       case 'undo':
       case 'new': {
         snapAll(sim)
@@ -499,7 +555,8 @@ export function createStage(host: HTMLElement): Stage {
     }
 
     // Completion sparks and win confetti, delayed until a pour has landed.
-    const effectAt = pour ? pour.pourEnd + 40 : performance.now()
+    const latestEnd = latestPourEnd()
+    const effectAt = latestEnd !== null ? latestEnd + 40 : performance.now()
     if (animate) {
       next.tubes.forEach((tube, i) => {
         const done = isComplete(tube, next.capacity)
