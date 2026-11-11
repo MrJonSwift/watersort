@@ -8,7 +8,7 @@
 import type { PrimaryAction, Reward, UIView } from './controller'
 import type { Challenge } from './challenges'
 import type { Settings } from './settings'
-import { isComplete, openSlots } from './rules'
+import { isComplete, isFull, openSlots } from './rules'
 import type { GameState, Tube } from './types'
 
 export interface UIHandlers {
@@ -73,7 +73,9 @@ export function tubeAria(tube: Tube, index: number, capacity: number): string {
   if (open >= capacity) return `${base}, ${tube.colors.length} of ${capacity} filled`
   if (open === 0) return `${base}, sealed, tap to open a slot`
   return tube.colors.length > 0
-    ? `${base}, ${open} of ${capacity} slots open, ${tube.colors.length} filled`
+    ? `${base}, ${open} of ${capacity} slots open, ${tube.colors.length} filled${
+        isFull(tube, capacity) ? ', full' : ''
+      }`
     : `${base}, ${open} of ${capacity} slots open, tap to open a slot`
 }
 

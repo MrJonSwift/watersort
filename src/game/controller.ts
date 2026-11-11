@@ -18,7 +18,7 @@
 import { drawChallenge, type Challenge } from './challenges'
 import { MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import type { Progress } from './progress'
-import { canGrow, isComplete } from './rules'
+import { canGrow, isComplete, openSlots } from './rules'
 import type { SoundName } from './audio'
 import type { Settings } from './settings'
 import {
@@ -327,9 +327,12 @@ export function createController(ports: ControllerPorts): Controller {
     },
 
     start() {
-      // The UI must build the tubes before the stage can measure them.
+      // Mount only: the UI must build the tubes before the stage can measure.
+      // The board was already built (and sealed) with the controller, so this
+      // does not rebuild it; closing a gate keeps a repeat call from leaving
+      // an orphaned dialog on screen.
       undoCredits = UNDO_CREDITS
-      gate = null
+      closeGate()
       usedDraws = []
       ports.ui.update(state, settings, viewFor())
       ports.stage.setPrefs({ pourFx: settings.pourFx })
@@ -343,14 +346,24 @@ export function createController(ports: ControllerPorts): Controller {
       const target = before.tubes[index]
       // A sealed spare is an earn affordance, not a rejected move: tapping it
       // with nothing selected asks the gate to grow it. With a selection the
-      // tap stays a pour attempt — an empty grown spare always has room.
-      if (
-        before.selected === null &&
-        target &&
-        canGrow(target, before.capacity)
-      ) {
-        openGate({ kind: 'grow', tube: index })
-        return
+      // tap is a pour attempt, and a sealed target answers it as invalid —
+      // silently dropping the selection would leave the player guessing.
+      if (target && target.colors.length === 0) {
+        if (openSlots(target, before.capacity) === 0) {
+          if (before.selected === null) {
+            openGate({ kind: 'grow', tube: index })
+          } else {
+            ports.audio.play('invalid')
+            ports.stage.dispatch({ type: 'invalid', index }, before)
+          }
+          return
+        }
+        // An empty partly open spare with nothing selected is also earnable;
+        // with a selection the tap below pours into its open slots.
+        if (before.selected === null && canGrow(target, before.capacity)) {
+          openGate({ kind: 'grow', tube: index })
+          return
+        }
       }
       const next = applyTap(before, index)
       if (next === before) {

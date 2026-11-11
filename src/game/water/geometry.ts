@@ -63,6 +63,36 @@ export function unitBoundaryYs(height: number, capacity: number): number[] {
 }
 
 /**
+ * Guide boundaries that actually exist on a partly open tube (ticket 09).
+ *
+ * Open slots fill from the bottom, so the sealed region is the top
+ * `capacity - open` units; boundaries inside it are not drawn. The boundary at
+ * the seal edge is drawn by the seal line, not here. `open` defaults to a
+ * fully open tube, matching `Tube.open` being undefined for ordinary tubes.
+ */
+export function visibleBoundaryYs(height: number, capacity: number, open = capacity): number[] {
+  if (!Number.isFinite(open)) return []
+  const sealed = Math.max(0, capacity - Math.trunc(open))
+  if (sealed <= 0) return unitBoundaryYs(height, capacity)
+  return unitBoundaryYs(height, capacity).filter((_, index) => index + 1 > sealed)
+}
+
+/**
+ * Distance from the top of the glass to the seal edge of a partly open tube,
+ * or `null` when no slot is sealed. A wholly sealed spare seals at the bottom
+ * (the veil covers everything); the renderer draws a line only when the seal
+ * edge is above the bottom.
+ */
+export function sealLineY(height: number, capacity: number, open = capacity): number | null {
+  if (!Number.isFinite(height) || height <= 0) return null
+  if (!Number.isFinite(capacity) || capacity < 1) return null
+  if (!Number.isFinite(open)) return null
+  const sealed = Math.max(0, capacity - Math.trunc(open))
+  if (sealed === 0) return null
+  return (height * sealed) / capacity
+}
+
+/**
  * Pose that hovers `rect` above `target` so its spout pours into `target`:
  * the tube is lifted until the spout is `gap` px above the target's top edge,
  * and tilted by `tiltDeg` toward the board centre so the body stays on screen.

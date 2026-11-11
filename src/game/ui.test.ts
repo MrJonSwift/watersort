@@ -48,7 +48,19 @@ describe('tubeAria', () => {
 
   it('never says a partly open spare is complete', () => {
     expect(tubeAria({ colors: [1, 1, 1, 1], open: 2 }, 0, 4)).toBe(
-      'Tube 1, 2 of 4 slots open, 4 filled',
+      'Tube 1, 2 of 4 slots open, 4 filled, full',
+    )
+  })
+
+  it('says when a partly open spare is full at its open count', () => {
+    expect(tubeAria({ colors: [1, 1], open: 2 }, 1, 4)).toBe(
+      'Tube 2, 2 of 4 slots open, 2 filled, full',
+    )
+    expect(tubeAria({ colors: [1], open: 2 }, 1, 4)).toBe(
+      'Tube 2, 2 of 4 slots open, 1 filled',
+    )
+    expect(tubeAria({ colors: [1], open: 3 }, 1, 4)).toBe(
+      'Tube 2, 3 of 4 slots open, 1 filled',
     )
   })
 })

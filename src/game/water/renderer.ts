@@ -6,7 +6,7 @@
 import type { ColorId } from '../types'
 import { darken, lighten, rgbCss, rgbOf, type RGB } from '../palette'
 import type { ParticleKind } from './physics'
-import { unitBoundaryYs, type Pose, type Rect } from './geometry'
+import { sealLineY, visibleBoundaryYs, type Pose, type Rect } from './geometry'
 
 export interface LayerView {
   color: ColorId
@@ -204,30 +204,31 @@ function drawTube(ctx: CanvasRenderingContext2D, tube: TubeView): void {
   // Slot guides last, still inside the glass clip and after the liquid, so
   // they sit on top of the colour but can never spill past the glass. Straight
   // and static: these boundaries are where a resting liquid edge will be.
-  // On a partly open spare, boundaries inside the sealed region are skipped —
-  // those slots do not exist yet, and the seal line marks the edge instead.
+  // On a partly open spare, only boundaries in the open region are drawn —
+  // `visibleBoundaryYs` owns that rule and is tested with the rest of the
+  // slot geometry.
   const open = tube.open ?? capacity
   const sealedSlots = capacity - open
   ctx.beginPath()
-  unitBoundaryYs(rect.h, capacity).forEach((y, index) => {
-    if (index + 1 <= sealedSlots) return
+  for (const y of visibleBoundaryYs(rect.h, capacity, open)) {
     ctx.moveTo(rect.x + GUIDE_INSET_PX, rect.y + y)
     ctx.lineTo(rect.x + rect.w - GUIDE_INSET_PX, rect.y + y)
-  })
+  }
   ctx.strokeStyle = rgbCss(WHITE, GUIDE_ALPHA)
   ctx.lineWidth = GUIDE_WIDTH_PX
   ctx.stroke()
 
   if (sealedSlots > 0) {
-    const sealY = rect.y + sealedSlots * unit
+    // Frosted glass over the still-sealed slots.
     ctx.fillStyle = rgbCss(WHITE, SEALED_ALPHA)
-    ctx.fillRect(rect.x, rect.y, rect.w, sealY - rect.y)
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h - (rect.h * open) / capacity)
     // The line marks where the open region ends. A wholly sealed spare has no
     // such boundary, so it gets the veil and the dashed rim alone.
-    if (sealedSlots < capacity) {
+    const sealY = sealLineY(rect.h, capacity, open)
+    if (sealY !== null && sealedSlots < capacity) {
       ctx.beginPath()
-      ctx.moveTo(rect.x + GUIDE_INSET_PX, sealY)
-      ctx.lineTo(rect.x + rect.w - GUIDE_INSET_PX, sealY)
+      ctx.moveTo(rect.x + GUIDE_INSET_PX, rect.y + sealY)
+      ctx.lineTo(rect.x + rect.w - GUIDE_INSET_PX, rect.y + sealY)
       ctx.strokeStyle = rgbCss(WHITE, SEAL_LINE_ALPHA)
       ctx.lineWidth = GUIDE_WIDTH_PX
       ctx.stroke()

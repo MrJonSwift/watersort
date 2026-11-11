@@ -1,6 +1,13 @@
 import { DEFAULT_CAPACITY, canGrow, canPour, openSlots, pour } from './rules'
 import type { ColorId, GameState } from './types'
 
+/*
+ * Tubes are treated as immutable values: state changes either copy the tubes
+ * they touch or reuse the untouched ones, and nothing mutates a Tube in place.
+ * That is why `growBlock` and `sealSpares` may hand back unchanged references
+ * while `pour` and `undo` deep-copy the pair they move water between.
+ */
+
 export function createGame(
   board: ColorId[][],
   capacity = DEFAULT_CAPACITY,

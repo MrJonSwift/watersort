@@ -723,6 +723,40 @@ describe('locked spares (ticket 09)', () => {
     expect(h.controller.state.tubes[2].open).toBe(1)
   })
 
+  it('a sealed spare refuses a pour with feedback and keeps the selection', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    h.controller.tap(0) // select the full tube
+    const before = h.controller.state
+
+    h.controller.tap(1) // sealed: no slot can receive it
+    expect(h.controller.state).toBe(before)
+    expect(h.controller.state.selected).toBe(0)
+    expect(h.sounds).toContain('invalid')
+    expect(h.events[h.events.length - 1]).toEqual({ type: 'invalid', index: 1 })
+  })
+
+  it('the reward does not change which challenge is drawn', () => {
+    const drawFor = (open: (h: Harness) => void): string | undefined => {
+      const h = harness([[1, 1], [1], []], {}, locked)
+      h.controller.start()
+      open(h)
+      return h.challengeShows[0]?.prompt
+    }
+
+    const rounded = drawFor((h) => {
+      for (let spent = 0; spent < UNDO_CREDITS; spent++) {
+        h.controller.tap(0)
+        h.controller.tap(1)
+        h.controller.undo()
+      }
+      h.controller.undo() // spent button: undo reward
+    })
+    const grown = drawFor((h) => h.controller.tap(2)) // sealed spare: grow reward
+
+    expect(grown).toBe(rounded)
+  })
+
   it('earn() still defaults to the undo reward for other callers', () => {
     const h = harness([[1, 1], [1]])
     h.controller.start()
