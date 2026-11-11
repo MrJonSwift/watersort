@@ -3,10 +3,13 @@ import {
   createController,
   describeTap,
   primaryAction,
+  UNDO_CAP,
+  UNDO_CREDITS,
   type ControllerPorts,
   type ControllerStage,
   type UIView,
 } from './controller'
+import type { Challenge } from './challenges'
 import { MAX_LEVEL } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
@@ -30,6 +33,8 @@ interface Harness {
   boards: number[]
   updates: Array<{ state: GameState; settings: Settings; view: UIView }>
   unlocks: () => number
+  challengeShows: Challenge[]
+  challengeHides: () => number
 }
 
 /**
@@ -53,6 +58,8 @@ function harness(
   const savedProgress: Progress[] = []
   const boards: number[] = []
   const updates: Array<{ state: GameState; settings: Settings; view: UIView }> = []
+  const challengeShows: Challenge[] = []
+  let challengeHides = 0
   let unlocks = 0
 
   const stage = new Proxy(
@@ -79,6 +86,12 @@ function harness(
     ui: {
       update(state, next, view) {
         updates.push({ state, settings: next, view })
+      },
+      showChallenge(challenge) {
+        challengeShows.push(challenge)
+      },
+      hideChallenge() {
+        challengeHides++
       },
     },
     stage,
@@ -124,6 +137,8 @@ function harness(
     boards,
     updates,
     unlocks: () => unlocks,
+    challengeShows,
+    challengeHides: () => challengeHides,
   }
 }
 
@@ -403,6 +418,159 @@ describe('undo budget', () => {
     expect(h.controller.state.moves).toBe(2)
     expect(h.controller.state.tubes.map((t) => t.colors)).toEqual([[], [1, 1, 1, 1], [1]])
     expect(h.updates.at(-1)?.view.undoCredits).toBe(4)
+  })
+})
+
+describe('earn gate', () => {
+  /** Spend the whole budget with repeatable pour+undo cycles. */
+  function spendAll(h: Harness): void {
+    for (let spent = 0; spent < UNDO_CREDITS; spent++) {
+      h.controller.tap(0)
+      h.controller.tap(1)
+      h.controller.undo()
+    }
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(0)
+  }
+
+  it('the spent undo button opens the gate instead of doing nothing', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+    const eventsBefore = h.events.length
+
+    h.controller.undo()
+    expect(h.challengeShows).toHaveLength(1)
+    expect(h.challengeShows[0].options.length).toBeGreaterThanOrEqual(2)
+    // Opening the gate is not a move: no stage event, no board change.
+    expect(h.events).toHaveLength(eventsBefore)
+    expect(h.controller.state.moves).toBe(0)
+  })
+
+  it('a second earn while the gate is open does not redraw', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+    h.controller.undo()
+    h.controller.undo()
+    h.controller.earn()
+    expect(h.challengeShows).toHaveLength(1)
+  })
+
+  it('a correct answer grants one credit, shows it and closes the gate', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+    h.controller.undo()
+    const shown = h.challengeShows[0]
+
+    h.controller.answer(shown.answer)
+    expect(h.challengeHides()).toBe(1)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(1)
+    expect(h.sounds).toContain('complete')
+    expect(h.sounds).not.toContain('invalid')
+  })
+
+  it('a wrong answer closes the gate and grants nothing', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+    h.controller.undo()
+    const shown = h.challengeShows[0]
+    const wrong = (shown.answer + 1) % shown.options.length
+
+    h.controller.answer(wrong)
+    expect(h.challengeHides()).toBe(1)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(0)
+    expect(h.sounds).toContain('invalid')
+    expect(h.sounds).not.toContain('complete')
+  })
+
+  it('dismissing closes the gate and grants nothing', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+    h.controller.undo()
+
+    h.controller.dismiss()
+    expect(h.challengeHides()).toBe(1)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(0)
+    expect(h.sounds).not.toContain('complete')
+  })
+
+  it('a closed challenge is not the immediate next draw', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+
+    h.controller.undo()
+    const dismissed = h.challengeShows[0]
+    h.controller.dismiss()
+    h.controller.undo()
+    expect(h.challengeShows[1].prompt).not.toBe(dismissed.prompt)
+
+    const answered = h.challengeShows[1]
+    h.controller.answer(answered.answer)
+    h.controller.earn() // the gate itself, as a later caller (ticket 09) would use it
+    expect(h.challengeShows[2].prompt).not.toBe(answered.prompt)
+  })
+
+  it('the draw sequence is deterministic for the same session input', () => {
+    const run = () => {
+      const h = harness([[1, 1], [1]])
+      h.controller.start()
+      const prompts: string[] = []
+      for (let round = 0; round < 3; round++) {
+        h.controller.earn()
+        prompts.push(h.challengeShows.at(-1)?.prompt ?? 'missing')
+        h.controller.dismiss()
+      }
+      return prompts
+    }
+    expect(run()).toEqual(run())
+  })
+
+  it('earned credits stack onto the budget and stop at the cap', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    // Earned credits stack onto what is left, so spend the free budget first.
+    spendAll(h)
+    for (let earned = 1; earned <= UNDO_CAP + 2; earned++) {
+      h.controller.earn()
+      h.controller.answer(h.challengeShows.at(-1)!.answer)
+      const credits = h.updates.at(-1)?.view.undoCredits
+      expect(credits, `earn ${earned}`).toBe(Math.min(earned, UNDO_CAP))
+    }
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(UNDO_CAP)
+  })
+
+  it('board input waits while the gate is open, and restart cannot strand it', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    spendAll(h)
+    h.controller.undo()
+    const eventsBefore = h.events.length
+
+    h.controller.tap(0)
+    expect(h.controller.state.selected).toBeNull()
+    expect(h.events).toHaveLength(eventsBefore)
+
+    h.controller.restart()
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(0)
+    expect(h.challengeShows).toHaveLength(1)
+
+    h.controller.dismiss()
+    h.controller.tap(0)
+    expect(h.controller.state.selected).toBe(0)
+  })
+
+  it('answering with no gate open does nothing', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    h.controller.answer(0)
+    h.controller.dismiss()
+    expect(h.challengeShows).toHaveLength(0)
+    expect(h.challengeHides()).toBe(0)
+    expect(h.updates).toHaveLength(1) // start() only
   })
 })
 
