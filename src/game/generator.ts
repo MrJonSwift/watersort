@@ -14,6 +14,7 @@ import {
   DEFAULT_CAPACITY,
   isComplete,
   isWon,
+  openSlots,
   pour,
   topColor,
   topRun,
@@ -76,7 +77,7 @@ function reverseMoves(tubes: readonly Tube[], capacity: number): ReverseMove[] {
     const run = topRun(source)
     for (let to = 0; to < tubes.length; to++) {
       if (to === from) continue
-      const room = capacity - tubes[to].colors.length
+      const room = openSlots(tubes[to], capacity) - tubes[to].colors.length
       if (room <= 0) continue
       if (topColor(tubes[to]) === color) continue
       for (let amount = 1; amount <= run && amount <= room; amount++) {

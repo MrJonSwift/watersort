@@ -5,7 +5,7 @@ import { createGame } from './state'
 import { DEFAULT_SETTINGS } from './settings'
 import type { GameState } from './types'
 import { MAX_LEVEL } from './levels'
-import { createUI, bannerCopy, tubeColumns, undoAria, undoCopy, type UIHandlers } from './ui'
+import { createUI, bannerCopy, rewardNote, tubeAria, tubeColumns, undoAria, undoCopy, type UIHandlers } from './ui'
 
 describe('bannerCopy', () => {
   it('reports the moves for a mid-run win', () => {
@@ -24,6 +24,41 @@ describe('undoCopy and undoAria', () => {
     expect(undoCopy(0)).toBe('Undo (0)')
     expect(undoAria(5)).toBe('Undo, 5 left')
     expect(undoAria(0)).toBe('Undo, 0 left')
+  })
+})
+
+describe('tubeAria', () => {
+  const full = { colors: [1, 1] }
+  const sealed = { colors: [], open: 0 }
+  const partly = { colors: [], open: 2 }
+  const partlyFilled = { colors: [1], open: 2 }
+
+  it('keeps the plain count for an ordinary tube', () => {
+    expect(tubeAria(full, 0, 4)).toBe('Tube 1, 2 of 4 filled')
+  })
+
+  it('names a sealed spare and its affordance', () => {
+    expect(tubeAria(sealed, 1, 4)).toBe('Tube 2, sealed, tap to open a slot')
+  })
+
+  it('reports open slots for a partly grown spare, filled or empty', () => {
+    expect(tubeAria(partly, 2, 4)).toBe('Tube 3, 2 of 4 slots open, tap to open a slot')
+    expect(tubeAria(partlyFilled, 2, 4)).toBe('Tube 3, 2 of 4 slots open, 1 filled')
+  })
+
+  it('never says a partly open spare is complete', () => {
+    expect(tubeAria({ colors: [1, 1, 1, 1], open: 2 }, 0, 4)).toBe(
+      'Tube 1, 2 of 4 slots open, 4 filled',
+    )
+  })
+})
+
+describe('rewardNote', () => {
+  it('says plainly what a correct answer is worth', () => {
+    expect(rewardNote({ kind: 'undo' })).toBe('A correct answer adds one undo.')
+    expect(rewardNote({ kind: 'grow', tube: 3 })).toBe(
+      'A correct answer opens one more slot in that tube.',
+    )
   })
 })
 
@@ -164,6 +199,37 @@ describe('the earn gate dialog', () => {
     expect(gate.querySelector('.gate__option')).toBeNull()
     expect(document.querySelector('.gate__prompt')?.textContent).toBe('')
     expect(document.activeElement).toBe(opener)
+  })
+
+  it('says what a correct answer is worth under the prompt', () => {
+    const h = gateHarness()
+    updateOnce(h)
+    const note = document.querySelector<HTMLElement>('.gate__note')!
+
+    h.ui.showChallenge(challenge, { kind: 'grow', tube: 1 })
+    expect(note.hidden).toBe(false)
+    expect(note.textContent).toBe(rewardNote({ kind: 'grow', tube: 1 }))
+
+    h.ui.hideChallenge()
+    expect(note.hidden).toBe(true)
+    expect(note.textContent).toBe('')
+  })
+
+  it('marks a sealed spare and keeps its ARIA honest', () => {
+    const h = gateHarness()
+    h.state.tubes[1] = { colors: [], open: 0 }
+    h.ui.update(h.state, { ...DEFAULT_SETTINGS }, {
+      level: 20,
+      maxLevel: MAX_LEVEL,
+      primary: 'restart',
+      undoCredits: 5,
+    })
+
+    const tubes = document.querySelectorAll<HTMLButtonElement>('.tube')
+    expect(tubes[0].classList.contains('is-sealed')).toBe(false)
+    expect(tubes[1].classList.contains('is-sealed')).toBe(true)
+    expect(tubes[1].getAttribute('aria-label')).toBe('Tube 2, sealed, tap to open a slot')
+    expect(tubes[0].getAttribute('aria-label')).toBe('Tube 1, 2 of 4 filled')
   })
 
   it('the undo button becomes the earn affordance at zero credits', () => {

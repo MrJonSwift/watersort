@@ -5,11 +5,11 @@
  * classes. All motion and liquid live in the water stage (`water/stage.ts`),
  * which is the single writer of tube transforms.
  */
-import type { PrimaryAction, UIView } from './controller'
+import type { PrimaryAction, Reward, UIView } from './controller'
 import type { Challenge } from './challenges'
 import type { Settings } from './settings'
-import { isComplete } from './rules'
-import type { GameState } from './types'
+import { isComplete, openSlots } from './rules'
+import type { GameState, Tube } from './types'
 
 export interface UIHandlers {
   onTap(index: number): void
@@ -25,7 +25,8 @@ export interface UIHandlers {
 
 export interface UI {
   update(state: GameState, settings: Settings, view: UIView): void
-  showChallenge(challenge: Challenge): void
+  /** Show the earn gate; the reward is said plainly under the prompt. */
+  showChallenge(challenge: Challenge, reward?: Reward): void
   hideChallenge(): void
 }
 
@@ -52,6 +53,28 @@ export function undoCopy(credits: number): string {
 /** What the undo button tells assistive tech, including the budget. */
 export function undoAria(credits: number): string {
   return `Undo, ${credits} left`
+}
+
+/** What a correct answer at the gate is worth, said plainly. */
+export function rewardNote(reward: Reward): string {
+  return reward.kind === 'undo'
+    ? 'A correct answer adds one undo.'
+    : 'A correct answer opens one more slot in that tube.'
+}
+
+/**
+ * What a tube tells assistive tech, including sealed slots (ticket 09): a
+ * sealed spare says so and offers the affordance; a partly open spare reads
+ * as its open slot count, never as a complete tube.
+ */
+export function tubeAria(tube: Tube, index: number, capacity: number): string {
+  const base = `Tube ${index + 1}`
+  const open = openSlots(tube, capacity)
+  if (open >= capacity) return `${base}, ${tube.colors.length} of ${capacity} filled`
+  if (open === 0) return `${base}, sealed, tap to open a slot`
+  return tube.colors.length > 0
+    ? `${base}, ${open} of ${capacity} slots open, ${tube.colors.length} filled`
+    : `${base}, ${open} of ${capacity} slots open, tap to open a slot`
 }
 
 /** Banner text for a finished board: the last level reads as the end of the run. */
@@ -173,6 +196,9 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
   gatePanel.setAttribute('aria-label', 'Challenge')
   const gatePrompt = document.createElement('p')
   gatePrompt.className = 'gate__prompt'
+  const gateNote = document.createElement('p')
+  gateNote.className = 'gate__note'
+  gateNote.hidden = true
   const gateOptions = document.createElement('div')
   gateOptions.className = 'gate__options'
   const gateSkip = document.createElement('button')
@@ -180,7 +206,7 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
   gateSkip.className = 'btn gate__skip'
   gateSkip.textContent = 'Not now'
   gateSkip.addEventListener('click', () => handlers.onDismiss())
-  gatePanel.append(gatePrompt, gateOptions, gateSkip)
+  gatePanel.append(gatePrompt, gateNote, gateOptions, gateSkip)
   gate.append(gatePanel)
 
   // Where focus returns when the gate closes: the control that opened it.
@@ -256,11 +282,13 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
       soundToggle.set(settings.sound)
       pourToggle.set(settings.pourFx)
 
-      tubes.forEach((tube, i) => {
-        const colors = state.tubes[i].colors
-        tube.setAttribute('aria-label', `Tube ${i + 1}, ${colors.length} of ${state.capacity} filled`)
-        tube.classList.toggle('is-selected', state.selected === i)
-        tube.classList.toggle('is-complete', isComplete(state.tubes[i], state.capacity))
+      tubes.forEach((tubeEl, i) => {
+        const tube = state.tubes[i]
+        const open = openSlots(tube, state.capacity)
+        tubeEl.setAttribute('aria-label', tubeAria(tube, i, state.capacity))
+        tubeEl.classList.toggle('is-selected', state.selected === i)
+        tubeEl.classList.toggle('is-complete', isComplete(tube, state.capacity))
+        tubeEl.classList.toggle('is-sealed', open === 0)
       })
 
       banner.hidden = !state.won
@@ -278,9 +306,11 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
       undoBtn.classList.toggle('btn--earn', earnable)
     },
 
-    showChallenge(challenge) {
+    showChallenge(challenge, reward) {
       gateOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
       gatePrompt.textContent = challenge.prompt
+      gateNote.textContent = reward ? rewardNote(reward) : ''
+      gateNote.hidden = !reward
       const options = challenge.options.map((option, index) => {
         const button = document.createElement('button')
         button.type = 'button'
@@ -299,6 +329,8 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
       gate.hidden = true
       gateOptions.replaceChildren()
       gatePrompt.textContent = ''
+      gateNote.textContent = ''
+      gateNote.hidden = true
       gateOpener?.focus()
       gateOpener = null
     },

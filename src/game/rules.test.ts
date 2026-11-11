@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { canPour, isWon, pour, pourAmount, topRun } from './rules'
+import {
+  canGrow,
+  canPour,
+  isFull,
+  isWon,
+  openSlots,
+  pour,
+  pourAmount,
+  topRun,
+} from './rules'
 import { createGame, tap, undo } from './state'
 import type { ColorId, Tube } from './types'
 
 /** Build a Tube for the pure rule helpers. */
 const tube = (...colors: ColorId[]): Tube => ({ colors })
+
+/** Build a Tube with a limited open slot count (a partly grown spare). */
+const spare = (open: number, ...colors: ColorId[]): Tube => ({ colors, open })
 
 /** Build a board of color arrays for createGame. */
 const board = (...tubes: ColorId[][]): ColorId[][] => tubes
@@ -116,5 +128,52 @@ describe('undo', () => {
   it('is a no-op when there is nothing to undo', () => {
     const state = createGame(board([1], []))
     expect(undo(state)).toBe(state)
+  })
+})
+
+describe('open slots (locked spares)', () => {
+  it('reads undefined as fully open and honours an explicit count', () => {
+    expect(openSlots(tube(), 4)).toBe(4)
+    expect(openSlots(spare(2), 4)).toBe(2)
+    expect(openSlots(spare(0), 4)).toBe(0)
+  })
+
+  it('treats a sealed or partly open tube as full at its open count', () => {
+    expect(isFull(spare(0), 4)).toBe(true)
+    expect(isFull(spare(2, 1, 1), 4)).toBe(true)
+    expect(isFull(spare(2, 1), 4)).toBe(false)
+  })
+
+  it('limits pours into a partly open spare', () => {
+    expect(canPour([tube(1, 1, 1), spare(2)], 0, 1, 4)).toBe(true)
+    expect(pourAmount([tube(1, 1, 1), spare(2)], 0, 1, 4)).toBe(2)
+    expect(canPour([tube(1, 1), spare(2, 1, 1)], 0, 1, 4)).toBe(false)
+  })
+
+  it('pour carries open slots through the copy', () => {
+    const game = createGame(board([1, 1, 1], []))
+    const opened = { ...game, tubes: [game.tubes[0], spare(2)] }
+    const next = pour(opened, 0, 1)
+
+    expect(next.tubes[1].open).toBe(2)
+    expect(next.tubes[1].colors).toEqual([1, 1])
+    expect(next.tubes[0].open).toBeUndefined()
+  })
+
+  it('a partly open spare is never complete and must be empty to win', () => {
+    const fullOfOne = { ...createGame([]), tubes: [spare(2, 1, 1), tube()] }
+    expect(isFull(fullOfOne.tubes[0], 4)).toBe(true)
+    expect(isWon(fullOfOne)).toBe(false)
+
+    const emptied = { ...fullOfOne, tubes: [spare(2), tube()] }
+    expect(isWon(emptied)).toBe(true)
+  })
+
+  it('knows which tubes can still grow', () => {
+    expect(canGrow(spare(0), 4)).toBe(true)
+    expect(canGrow(spare(3), 4)).toBe(true)
+    expect(canGrow(spare(4), 4)).toBe(false)
+    expect(canGrow(spare(2, 1), 4)).toBe(false) // not empty
+    expect(canGrow(tube(), 4)).toBe(false) // fully open
   })
 })

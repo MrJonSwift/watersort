@@ -17,8 +17,22 @@ export function topRun(tube: Tube): number {
   return run
 }
 
+/**
+ * Slots a tube can currently take. A sealed spare (ticket 09) carries `open`
+ * and grows one slot per challenge at the earn gate; every other tube has
+ * all of its slots open.
+ */
+export function openSlots(tube: Tube, capacity: number): number {
+  return tube.open ?? capacity
+}
+
+/** Whether this tube can still grow: an empty spare with slots left to open. */
+export function canGrow(tube: Tube, capacity: number): boolean {
+  return tube.colors.length === 0 && openSlots(tube, capacity) < capacity
+}
+
 export function isFull(tube: Tube, capacity: number): boolean {
-  return tube.colors.length >= capacity
+  return tube.colors.length >= openSlots(tube, capacity)
 }
 
 /** A tube is complete when it is full of a single color. */
@@ -55,7 +69,7 @@ export function pourAmount(
   capacity: number,
 ): number {
   if (!canPour(tubes, from, to, capacity)) return 0
-  return Math.min(topRun(tubes[from]), capacity - tubes[to].colors.length)
+  return Math.min(topRun(tubes[from]), openSlots(tubes[to], capacity) - tubes[to].colors.length)
 }
 
 export function isWon(state: GameState): boolean {
@@ -69,7 +83,7 @@ export function pour(state: GameState, from: number, to: number): GameState {
   const amount = pourAmount(state.tubes, from, to, state.capacity)
   if (amount === 0) return state
 
-  const tubes = state.tubes.map((tube) => ({ colors: [...tube.colors] }))
+  const tubes = state.tubes.map((tube) => ({ colors: [...tube.colors], open: tube.open }))
   for (let i = 0; i < amount; i++) {
     tubes[to].colors.push(tubes[from].colors.pop() as ColorId)
   }

@@ -25,6 +25,8 @@ export interface TubeView {
   /** Surface displacement per wave sample, px. */
   wave: ArrayLike<number>
   capacity: number
+  /** Slots currently open; undefined when nothing is sealed (ticket 09). */
+  open?: number
   opacity: number
 }
 
@@ -71,6 +73,14 @@ const BLACK: RGB = [0, 0, 0]
 const GUIDE_ALPHA = 0.12
 const GUIDE_INSET_PX = 2
 const GUIDE_WIDTH_PX = 1
+
+/*
+ * A spare with earned slots shows its still-sealed region as frosted glass
+ * above a seal line: closed is visible before the first tap, and the slot
+ * guides only mark slots that actually exist.
+ */
+const SEALED_ALPHA = 0.2
+const SEAL_LINE_ALPHA = 0.38
 
 export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene): void {
   for (const tube of scene.tubes) drawTube(ctx, tube)
@@ -194,14 +204,35 @@ function drawTube(ctx: CanvasRenderingContext2D, tube: TubeView): void {
   // Slot guides last, still inside the glass clip and after the liquid, so
   // they sit on top of the colour but can never spill past the glass. Straight
   // and static: these boundaries are where a resting liquid edge will be.
+  // On a partly open spare, boundaries inside the sealed region are skipped —
+  // those slots do not exist yet, and the seal line marks the edge instead.
+  const open = tube.open ?? capacity
+  const sealedSlots = capacity - open
   ctx.beginPath()
-  for (const y of unitBoundaryYs(rect.h, capacity)) {
+  unitBoundaryYs(rect.h, capacity).forEach((y, index) => {
+    if (index + 1 <= sealedSlots) return
     ctx.moveTo(rect.x + GUIDE_INSET_PX, rect.y + y)
     ctx.lineTo(rect.x + rect.w - GUIDE_INSET_PX, rect.y + y)
-  }
+  })
   ctx.strokeStyle = rgbCss(WHITE, GUIDE_ALPHA)
   ctx.lineWidth = GUIDE_WIDTH_PX
   ctx.stroke()
+
+  if (sealedSlots > 0) {
+    const sealY = rect.y + sealedSlots * unit
+    ctx.fillStyle = rgbCss(WHITE, SEALED_ALPHA)
+    ctx.fillRect(rect.x, rect.y, rect.w, sealY - rect.y)
+    // The line marks where the open region ends. A wholly sealed spare has no
+    // such boundary, so it gets the veil and the dashed rim alone.
+    if (sealedSlots < capacity) {
+      ctx.beginPath()
+      ctx.moveTo(rect.x + GUIDE_INSET_PX, sealY)
+      ctx.lineTo(rect.x + rect.w - GUIDE_INSET_PX, sealY)
+      ctx.strokeStyle = rgbCss(WHITE, SEAL_LINE_ALPHA)
+      ctx.lineWidth = GUIDE_WIDTH_PX
+      ctx.stroke()
+    }
+  }
 
   ctx.restore()
 }

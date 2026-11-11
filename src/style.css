@@ -225,6 +225,21 @@ body {
 }
 
 /*
+ * A sealed spare reads closed even before the canvas veil reaches it: a
+ * dashed rim and a slightly dimmer tint. The canvas paints the frosted
+ * region and the seal line; this only styles the glass chrome.
+ */
+.tube.is-sealed::before {
+  border-style: dashed;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.01) 34%,
+    rgba(0, 0, 0, 0.3)
+  );
+}
+
+/*
  * Screens shorter than a common phone step the tube height down instead of
  * using a viewport-height `calc()`: 8.25rem still fits the two-row board and
  * the controls on a 568px-tall screen, and leaves more empty glass than the
@@ -389,10 +404,21 @@ body {
 }
 
 .gate__prompt {
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.3;
+}
+
+/* What a correct answer is worth, under the prompt. */
+.gate__note {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.gate__note[hidden] {
+  display: none;
 }
 
 .gate__options {

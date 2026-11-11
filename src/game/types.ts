@@ -4,6 +4,11 @@ export type ColorId = number
 export interface Tube {
   /** Colors stacked bottom-first. Index 0 is the bottom of the tube. */
   colors: ColorId[]
+  /**
+   * Slots currently open, on a spare whose capacity is earned at the gate
+   * (ticket 09). Undefined when every slot is open — the normal tube.
+   */
+  open?: number
 }
 
 export interface Move {
@@ -33,6 +38,8 @@ export type GameEvent =
   | { type: 'select'; index: number }
   | { type: 'deselect' }
   | { type: 'invalid'; index: number }
+  /** A spare grew by one open slot at the earn gate. */
+  | { type: 'grow'; index: number }
   | { type: 'undo' }
   | { type: 'new' }
   | { type: 'none' }

@@ -7,10 +7,11 @@ import {
   UNDO_CREDITS,
   type ControllerPorts,
   type ControllerStage,
+  type Reward,
   type UIView,
 } from './controller'
 import type { Challenge } from './challenges'
-import { MAX_LEVEL } from './levels'
+import { MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
@@ -34,6 +35,8 @@ interface Harness {
   updates: Array<{ state: GameState; settings: Settings; view: UIView }>
   unlocks: () => number
   challengeShows: Challenge[]
+  /** The reward handed to the UI with each shown challenge. */
+  rewards: Reward[]
   challengeHides: () => number
 }
 
@@ -59,6 +62,7 @@ function harness(
   const boards: number[] = []
   const updates: Array<{ state: GameState; settings: Settings; view: UIView }> = []
   const challengeShows: Challenge[] = []
+  const rewards: Reward[] = []
   let challengeHides = 0
   let unlocks = 0
 
@@ -87,8 +91,9 @@ function harness(
       update(state, next, view) {
         updates.push({ state, settings: next, view })
       },
-      showChallenge(challenge) {
+      showChallenge(challenge, reward) {
         challengeShows.push(challenge)
+        rewards.push(reward)
       },
       hideChallenge() {
         challengeHides++
@@ -138,6 +143,7 @@ function harness(
     updates,
     unlocks: () => unlocks,
     challengeShows,
+    rewards,
     challengeHides: () => challengeHides,
   }
 }
@@ -571,6 +577,157 @@ describe('earn gate', () => {
     expect(h.challengeShows).toHaveLength(0)
     expect(h.challengeHides()).toBe(0)
     expect(h.updates).toHaveLength(1) // start() only
+  })
+})
+
+describe('locked spares (ticket 09)', () => {
+  /** Level 20 is the first locked level; `SPARES_LOCK_FROM` is that pin. */
+  const locked = { level: SPARES_LOCK_FROM, highest: SPARES_LOCK_FROM }
+
+  it('seals empty spares at the locked level and leaves colours alone', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    expect(h.controller.state.tubes.map((tube) => tube.open)).toEqual([undefined, 0, 0])
+  })
+
+  it('leaves every spare open below the locked level', () => {
+    const h = harness([[1, 1], [], []], {}, { level: SPARES_LOCK_FROM - 1 })
+    h.controller.start()
+    expect(h.controller.state.tubes.every((tube) => tube.open === undefined)).toBe(true)
+  })
+
+  it('tapping a sealed spare opens the gate for that tube, not a move', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    const eventsBefore = h.events.length
+
+    h.controller.tap(1)
+    expect(h.rewards).toEqual([{ kind: 'grow', tube: 1 }])
+    expect(h.events).toHaveLength(eventsBefore)
+    expect(h.controller.state.selected).toBeNull()
+    expect(h.sounds).not.toContain('invalid')
+  })
+
+  it('a correct answer opens one slot and says so to the stage', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    h.controller.tap(2)
+    h.controller.answer(h.challengeShows[0].answer)
+
+    expect(h.controller.state.tubes[2].open).toBe(1)
+    expect(h.events[h.events.length - 1]).toEqual({ type: 'grow', index: 2 })
+    expect(h.controller.state.moves).toBe(0)
+    expect(h.controller.state.history).toEqual([])
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(UNDO_CREDITS)
+  })
+
+  it('a wrong answer or dismissal grants no slot', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+
+    h.controller.tap(1)
+    h.controller.answer((h.challengeShows[0].answer + 1) % h.challengeShows[0].options.length)
+    expect(h.controller.state.tubes[1].open).toBe(0)
+
+    h.controller.tap(1)
+    h.controller.dismiss()
+    expect(h.controller.state.tubes[1].open).toBe(0)
+  })
+
+  it('growth stops at capacity, and a grown spare then pours normally', () => {
+    const h = harness([[1, 1], []], {}, locked)
+    h.controller.start()
+
+    for (let grown = 1; grown <= 4; grown++) {
+      h.controller.tap(1)
+      h.controller.answer(h.challengeShows.at(-1)!.answer)
+      expect(h.controller.state.tubes[1].open).toBe(grown)
+    }
+    // Fully open: the tap is no longer a grow affordance.
+    const shows = h.challengeShows.length
+    h.controller.tap(1)
+    expect(h.challengeShows).toHaveLength(shows)
+
+    h.controller.tap(0) // select the source
+    h.controller.tap(1) // pour into the fully open spare
+    expect(h.controller.state.tubes[1].colors).toEqual([1, 1])
+  })
+
+  it('a partly open spare pours only up to its open slots', () => {
+    const h = harness([[1, 1, 1, 1], []], {}, locked)
+    h.controller.start()
+    h.controller.tap(1)
+    h.controller.answer(h.challengeShows[0].answer) // one slot open
+
+    h.controller.tap(0) // select the full tube
+    h.controller.tap(1) // pour into the one open slot
+    expect(h.controller.state.tubes[1].colors).toEqual([1])
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(UNDO_CREDITS)
+  })
+
+  it('the spent undo button still asks for an undo, not a slot', () => {
+    const h = harness([[1, 1], [1]], {}, locked)
+    h.controller.start()
+    // Spend the budget; the board's spare stays sealed but plays no part.
+    for (let spent = 0; spent < UNDO_CREDITS; spent++) {
+      h.controller.tap(0)
+      h.controller.tap(1)
+      h.controller.undo()
+    }
+    h.controller.undo()
+    expect(h.rewards).toEqual([{ kind: 'undo' }])
+
+    h.controller.answer(h.challengeShows[0].answer)
+    expect(h.updates.at(-1)?.view.undoCredits).toBe(1)
+    expect(h.controller.state.tubes[1].open).toBeUndefined() // no slot grew
+  })
+
+  it('restart, next level and play again reseal the spares', () => {
+    const reseal = () => {
+      const h = harness([[1, 1], []], {}, locked)
+      h.controller.start()
+      h.controller.tap(1)
+      h.controller.answer(h.challengeShows[0].answer)
+      expect(h.controller.state.tubes[1].open).toBe(1)
+      return h
+    }
+
+    const restarted = reseal()
+    restarted.controller.restart()
+    expect(restarted.controller.state.tubes[1].open).toBe(0)
+
+    const next = harness([[1, 1], []], {}, locked)
+    next.controller.start()
+    next.controller.nextLevel()
+    expect(next.controller.state.tubes[1].open).toBe(0)
+    expect(next.controller.level).toBe(SPARES_LOCK_FROM + 1)
+
+    const again = harness([[1, 1], []], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
+    again.controller.start()
+    again.controller.playAgain()
+    expect(again.controller.level).toBe(1)
+    expect(again.controller.state.tubes[1].open).toBeUndefined()
+  })
+
+  it('many rapid taps on a sealed spare do not draw more than one gate', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    for (let i = 0; i < 12; i++) h.controller.tap(1)
+    expect(h.challengeShows).toHaveLength(1)
+    expect(h.controller.state.tubes[1].open).toBe(0)
+
+    h.controller.answer(h.challengeShows[0].answer)
+    for (let i = 0; i < 12; i++) h.controller.tap(2)
+    expect(h.challengeShows).toHaveLength(2)
+    h.controller.answer(h.challengeShows[1].answer)
+    expect(h.controller.state.tubes[2].open).toBe(1)
+  })
+
+  it('earn() still defaults to the undo reward for other callers', () => {
+    const h = harness([[1, 1], [1]])
+    h.controller.start()
+    h.controller.earn()
+    expect(h.rewards).toEqual([{ kind: 'undo' }])
   })
 })
 
