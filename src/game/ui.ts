@@ -6,6 +6,7 @@
  * which is the single writer of tube transforms.
  */
 import type { PrimaryAction, UIView } from './controller'
+import type { Challenge } from './challenges'
 import type { Settings } from './settings'
 import { isComplete } from './rules'
 import type { GameState } from './types'
@@ -16,10 +17,16 @@ export interface UIHandlers {
   onUndo(): void
   onToggleSound(): void
   onTogglePourFx(): void
+  /** The player tapped challenge option `index`; the controller judges it. */
+  onAnswer(index: number): void
+  /** The player closed the gate without answering. */
+  onDismiss(): void
 }
 
 export interface UI {
   update(state: GameState, settings: Settings, view: UIView): void
+  showChallenge(challenge: Challenge): void
+  hideChallenge(): void
 }
 
 interface Toggle {
@@ -150,7 +157,64 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
   const pourToggle = makeToggle('Pour FX', handlers.onTogglePourFx)
   toggles.append(soundToggle.root, pourToggle.root)
 
-  root.append(hud, board, controls, toggles)
+  /*
+   * The earn gate: a modal the controller opens and closes through the UI
+   * port. The UI renders the challenge and reports choices; whether an
+   * answer was right and what it was worth are the controller's decisions.
+   * Content-shape agnostic: the same dialog serves any reward (ticket 09).
+   */
+  const gate = document.createElement('div')
+  gate.className = 'gate'
+  gate.hidden = true
+  const gatePanel = document.createElement('div')
+  gatePanel.className = 'gate__panel'
+  gatePanel.setAttribute('role', 'dialog')
+  gatePanel.setAttribute('aria-modal', 'true')
+  gatePanel.setAttribute('aria-label', 'Challenge')
+  const gatePrompt = document.createElement('p')
+  gatePrompt.className = 'gate__prompt'
+  const gateOptions = document.createElement('div')
+  gateOptions.className = 'gate__options'
+  const gateSkip = document.createElement('button')
+  gateSkip.type = 'button'
+  gateSkip.className = 'btn gate__skip'
+  gateSkip.textContent = 'Not now'
+  gateSkip.addEventListener('click', () => handlers.onDismiss())
+  gatePanel.append(gatePrompt, gateOptions, gateSkip)
+  gate.append(gatePanel)
+
+  // Where focus returns when the gate closes: the control that opened it.
+  let gateOpener: HTMLElement | null = null
+
+  function gateFocusables(): HTMLElement[] {
+    return Array.from(gatePanel.querySelectorAll<HTMLElement>('button'))
+  }
+
+  // Focus stays inside the dialog while it is open, and Escape dismisses.
+  gatePanel.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      handlers.onDismiss()
+      return
+    }
+    if (event.key !== 'Tab') return
+    const focusable = gateFocusables()
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+    if (event.shiftKey) {
+      if (active === first || !gatePanel.contains(active)) {
+        event.preventDefault()
+        last.focus()
+      }
+    } else if (active === last || !gatePanel.contains(active)) {
+      event.preventDefault()
+      first.focus()
+    }
+  })
+
+  root.append(hud, board, controls, toggles, gate)
 
   function ensureTubes(count: number): HTMLButtonElement[] {
     const existing = board.querySelectorAll<HTMLButtonElement>('.tube')
@@ -203,6 +267,40 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
       if (state.won) {
         banner.textContent = bannerCopy(view.level, view.maxLevel, state.moves)
       }
+
+      /*
+       * The undo button is the earn affordance at zero credits: enabled and
+       * marked, so tapping it opens the gate instead of doing nothing. Above
+       * zero it stays the plain undo and still needs history to rewind.
+       */
+      const earnable = view.undoCredits <= 0
+      undoBtn.disabled = !earnable && state.history.length === 0
+      undoBtn.classList.toggle('btn--earn', earnable)
+    },
+
+    showChallenge(challenge) {
+      gateOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      gatePrompt.textContent = challenge.prompt
+      const options = challenge.options.map((option, index) => {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'btn gate__option'
+        button.textContent = option
+        button.addEventListener('click', () => handlers.onAnswer(index))
+        return button
+      })
+      gateOptions.replaceChildren(...options)
+      gate.hidden = false
+      options[0]?.focus()
+    },
+
+    hideChallenge() {
+      if (gate.hidden) return
+      gate.hidden = true
+      gateOptions.replaceChildren()
+      gatePrompt.textContent = ''
+      gateOpener?.focus()
+      gateOpener = null
     },
   }
 }

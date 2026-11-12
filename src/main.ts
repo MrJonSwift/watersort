@@ -39,6 +39,8 @@ const ui = createUI(app, {
   onPrimary: () => controller.primary(),
   onToggleSound: () => controller.toggleSound(),
   onTogglePourFx: () => controller.togglePourFx(),
+  onAnswer: (index) => controller.answer(index),
+  onDismiss: () => controller.dismiss(),
 })
 
 controller = createController({

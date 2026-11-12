@@ -15,6 +15,7 @@
  * No DOM and no canvas imports: every effect arrives through a port, which is
  * what makes a whole session testable with fakes.
  */
+import { drawChallenge, type Challenge } from './challenges'
 import { MAX_LEVEL } from './levels'
 import type { Progress } from './progress'
 import { isComplete } from './rules'
@@ -28,10 +29,18 @@ import type { StagePrefs } from './water/stage'
 export type PrimaryAction = 'restart' | 'next' | 'play-again'
 
 /**
- * Free undos per level. Earned credits arrive in ticket 08; this is the
- * difficulty pin, not a persistence setting, so it lives with the session.
+ * Free undos per level. This is the difficulty pin, not a persistence
+ * setting, so it lives with the session.
  */
 export const UNDO_CREDITS = 5
+
+/**
+ * Ceiling on undo credits, free and earned combined. Credits earned at the
+ * gate stack onto the level's budget; the cap keeps the counter to one digit
+ * and stops a lucky streak from banking an endless supply. Session state,
+ * like the budget itself — never persisted.
+ */
+export const UNDO_CAP = 9
 
 /** Presentation-only view of the session, passed alongside the game state. */
 export interface UIView {
@@ -44,6 +53,10 @@ export interface UIView {
 
 export interface ControllerUI {
   update(state: GameState, settings: Settings, view: UIView): void
+  /** Show the earn gate with this challenge. The gate is the controller's. */
+  showChallenge(challenge: Challenge): void
+  /** Close the earn gate, whatever the reason: answered, dismissed or redrawn. */
+  hideChallenge(): void
 }
 
 /**
@@ -95,6 +108,12 @@ export interface Controller {
   playAgain(): void
   /** Run whatever the primary button currently means. */
   primary(): void
+  /** Open the earn gate. The spent undo button uses this; ticket 09 reuses it. */
+  earn(): void
+  /** Answer the open challenge by option index; a correct answer grants a credit. */
+  answer(option: number): void
+  /** Close the open challenge without granting anything. */
+  dismiss(): void
   toggleSound(): void
   togglePourFx(): void
   readonly state: GameState
@@ -139,6 +158,43 @@ export function createController(ports: ControllerPorts): Controller {
   let state: GameState = ports.board(level)
   let settings: Settings = ports.settings.load()
   let undoCredits = UNDO_CREDITS
+
+  /**
+   * The open earn gate, if any. The drawn pack index is what the session
+   * records as seen, so redraws skip it.
+   */
+  let gate: { index: number; challenge: Challenge } | null = null
+  /** Pack indices already offered this session; the pick skips them. */
+  let usedDraws: number[] = []
+
+  /**
+   * The draw seed is the level number: deterministic per session input, no
+   * `Math.random`, and the sequence replays in tests. `usedDraws` carries the
+   * rest of the state.
+   */
+  function openGate(): void {
+    if (gate) return
+    const draw = drawChallenge(level, usedDraws)
+    usedDraws = [...usedDraws, draw.index]
+    gate = draw
+    ports.ui.showChallenge(draw.challenge)
+  }
+
+  function closeGate(): void {
+    if (!gate) return
+    gate = null
+    ports.ui.hideChallenge()
+  }
+
+  /**
+   * While the gate is open, board input waits: taps, undos and the primary
+   * button all drop. The gate is session state, not presentation, so this
+   * does not reintroduce an animation gate — a tap while the gate is open is
+   * the player asking to answer first, and the board is untouched.
+   */
+  function gateOpen(): boolean {
+    return gate !== null
+  }
 
   function viewFor(next: GameState = state): UIView {
     return {
@@ -188,12 +244,14 @@ export function createController(ports: ControllerPorts): Controller {
   }
 
   function restart(): void {
+    if (gateOpen()) return
     // Same level, same deterministic board: only moves and history reset.
     undoCredits = UNDO_CREDITS
     commit(state, ports.board(level), { type: 'new' })
   }
 
   function nextLevel(): void {
+    if (gateOpen()) return
     if (level >= MAX_LEVEL) {
       playAgain()
       return
@@ -206,6 +264,7 @@ export function createController(ports: ControllerPorts): Controller {
   }
 
   function playAgain(): void {
+    if (gateOpen()) return
     level = 1
     progress = { ...progress, level }
     ports.progress.save(progress)
@@ -243,6 +302,8 @@ export function createController(ports: ControllerPorts): Controller {
     start() {
       // The UI must build the tubes before the stage can measure them.
       undoCredits = UNDO_CREDITS
+      gate = null
+      usedDraws = []
       ports.ui.update(state, settings, viewFor())
       ports.stage.setPrefs({ pourFx: settings.pourFx })
       ports.audio.setEnabled(settings.sound)
@@ -250,6 +311,7 @@ export function createController(ports: ControllerPorts): Controller {
     },
 
     tap(index) {
+      if (gateOpen()) return
       const before = state
       const next = applyTap(before, index)
       if (next === before) {
@@ -264,7 +326,13 @@ export function createController(ports: ControllerPorts): Controller {
     },
 
     undo() {
-      if (undoCredits === 0) return
+      if (gateOpen()) return
+      if (undoCredits === 0) {
+        // The spent undo button is the earn affordance: no credit, open the
+        // gate. Whether a credit comes back is the challenge's answer.
+        openGate()
+        return
+      }
       const before = state
       const next = applyUndo(before)
       if (next === before) return // no history: nothing used, nothing consumed
@@ -276,6 +344,30 @@ export function createController(ports: ControllerPorts): Controller {
     nextLevel,
     playAgain,
     primary,
+
+    earn() {
+      openGate()
+    },
+
+    answer(option) {
+      if (!gate) return
+      const correct = option === gate.challenge.answer
+      closeGate()
+      if (correct) {
+        undoCredits = Math.min(undoCredits + 1, UNDO_CAP)
+        ports.audio.play('complete')
+        ports.haptic(12)
+      } else {
+        ports.audio.play('invalid')
+        ports.haptic(24)
+      }
+      ports.ui.update(state, settings, viewFor())
+    },
+
+    dismiss() {
+      if (!gate) return
+      closeGate()
+    },
 
     toggleSound() {
       settings = { ...settings, sound: !settings.sound }
