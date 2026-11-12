@@ -17,7 +17,7 @@
  */
 import { drawChallenge, type Challenge } from './challenges'
 import { pickHiddenTubes } from './hidden'
-import { MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
+import { MAX_LEVEL, SPARES_LOCK_FROM, clampLevel } from './levels'
 import type { Progress } from './progress'
 import { canGrow, isComplete, openSlots } from './rules'
 import type { SoundName } from './audio'
@@ -108,6 +108,12 @@ export interface ControllerPorts {
   haptic(pattern: number | number[]): void
   settings: ControllerSettings
   progress: ControllerProgress
+  /**
+   * Start the session on this level instead of the saved one, for the
+   * `?level=N` test shortcut. A valid `1..MAX_LEVEL` level, or omitted. The
+   * jump becomes the saved position, so a reload resumes there.
+   */
+  startAt?: number
   /** Build the deterministic board for a numbered level. */
   board(level: number): GameState
 }
@@ -171,8 +177,26 @@ function completedCount(game: GameState): number {
 
 export function createController(ports: ControllerPorts): Controller {
   let progress: Progress = ports.progress.load()
+  /**
+   * The `?level=N` shortcut applies before anything is drawn. It is a jump,
+   * not a peek: the level becomes the saved position, so the address bar no
+   * longer has to carry the parameter and a reload resumes here. `highest`
+   * follows the same rule as `loadProgress` — you cannot be on a level you
+   * have not reached.
+   */
+  const startAt = ports.startAt === undefined ? undefined : clampLevel(ports.startAt)
+  if (startAt !== undefined) {
+    const jumped: Progress = {
+      level: startAt,
+      highest: Math.max(progress.highest, startAt),
+    }
+    if (jumped.level !== progress.level || jumped.highest !== progress.highest) {
+      ports.progress.save(jumped)
+    }
+    progress = jumped
+  }
   let level = progress.level
-  let state: GameState = buildBoard(progress.level)
+  let state: GameState = buildBoard(level)
   let settings: Settings = ports.settings.load()
   let undoCredits = UNDO_CREDITS
 
