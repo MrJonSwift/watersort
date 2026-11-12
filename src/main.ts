@@ -10,12 +10,25 @@ import { createAudio } from './game/audio'
 import { createController } from './game/controller'
 import { generateLevel } from './game/generator'
 import { haptic, preventDoubleTapZoom } from './game/input'
+import { MAX_LEVEL } from './game/levels'
 import { applyPaletteToCss } from './game/palette'
 import { loadProgress, saveProgress } from './game/progress'
+import { parseLevelJump } from './game/query'
 import { loadSettings, saveSettings } from './game/settings'
 import { createGame } from './game/state'
 import { createUI } from './game/ui'
 import { createStage } from './game/water/stage'
+
+/**
+ * Drop `?level=N` from the address bar once the controller has taken it.
+ * The jump is saved as the play position, so the parameter has done its job
+ * and a later reload must not re-apply it over a level the player advanced to.
+ */
+function consumeLevelJump(): void {
+  const url = new URL(location.href)
+  url.searchParams.delete('level')
+  history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 function requireElement(selector: string): HTMLElement {
   const element = document.querySelector<HTMLElement>(selector)
@@ -43,6 +56,8 @@ const ui = createUI(app, {
   onDismiss: () => controller.dismiss(),
 })
 
+const startAt = parseLevelJump(location.search, MAX_LEVEL)
+
 controller = createController({
   ui,
   stage,
@@ -50,8 +65,10 @@ controller = createController({
   haptic,
   settings: { load: loadSettings, save: saveSettings },
   progress: { load: loadProgress, save: saveProgress },
+  startAt: startAt ?? undefined,
   board: (level) => createGame(generateLevel(level).board),
 })
 
 preventDoubleTapZoom(app)
 controller.start()
+if (startAt !== null) consumeLevelJump()

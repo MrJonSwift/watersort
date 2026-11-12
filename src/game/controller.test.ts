@@ -52,6 +52,7 @@ function harness(
   board: number[][],
   settings: Partial<Settings> = {},
   progress: Partial<Progress> = {},
+  startAt?: number,
 ): Harness {
   const events: GameEvent[] = []
   const dispatched: GameState[] = []
@@ -125,6 +126,7 @@ function harness(
         savedProgress.push(next)
       },
     },
+    startAt,
     board(level) {
       boards.push(level)
       return createGame(board.map((colors) => [...colors]))
@@ -1001,5 +1003,52 @@ describe('hidden blocks (ticket 10)', () => {
     h.controller.undo()
     expect(h.controller.state.tubes[pick].colors).toEqual([1, 2])
     expect(h.controller.state.tubes[pick].hidden).toBe(0) // knowledge, not liquid
+  })
+})
+
+describe('level jump (ticket 11)', () => {
+  it('builds the level the shortcut asks for, with its policies applied', () => {
+    const h = harness(Array.from({ length: 9 }, () => [1]), {}, { level: 3, highest: 3 }, 15)
+    h.controller.start()
+    expect(h.boards).toEqual([15])
+    expect(h.controller.level).toBe(15)
+    const picks = pickHiddenTubes(15, h.controller.state.tubes)
+    expect(picks).toHaveLength(1)
+    expect(h.controller.state.tubes[picks[0]].hidden).toBe(1)
+  })
+
+  it('makes the jump the saved position, so a reload resumes there', () => {
+    const h = harness([[1, 1], []], {}, { level: 3, highest: 3 }, 15)
+    expect(h.savedProgress).toEqual([{ level: 15, highest: 15 }])
+  })
+
+  it('seals the spares when the jump lands on the locked tier', () => {
+    const h = harness([[1, 1], [2, 2], [], []], {}, { level: 1 }, 20)
+    h.controller.start()
+    expect(h.boards).toEqual([20])
+    expect(h.controller.state.tubes[2].open).toBe(0)
+  })
+
+  it('clamps a jump outside the board range', () => {
+    expect(harness([[1]], {}, {}, 99).boards).toEqual([MAX_LEVEL])
+    expect(harness([[1]], {}, {}, 0).boards).toEqual([1])
+  })
+
+  it('without a jump the saved level is used and nothing is written at boot', () => {
+    const h = harness([[1, 1], []], {}, { level: 7, highest: 9 })
+    expect(h.boards).toEqual([7])
+    expect(h.savedProgress).toEqual([])
+  })
+
+  it('a jump to the level already saved writes nothing', () => {
+    const h = harness([[1, 1], []], {}, { level: 15, highest: 15 }, 15)
+    expect(h.savedProgress).toEqual([])
+  })
+
+  it('advancing from a jump saves the next level as usual', () => {
+    const h = harness([[1]], {}, { level: 3, highest: 3 }, 15)
+    h.controller.nextLevel()
+    expect(h.controller.level).toBe(16)
+    expect(h.savedProgress.at(-1)).toEqual({ level: 16, highest: 15 })
   })
 })
