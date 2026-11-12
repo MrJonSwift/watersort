@@ -16,6 +16,7 @@
  * what makes a whole session testable with fakes.
  */
 import { drawChallenge, type Challenge } from './challenges'
+import { pickHiddenTubes } from './hidden'
 import { MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import type { Progress } from './progress'
 import { canGrow, isComplete, openSlots } from './rules'
@@ -23,6 +24,7 @@ import type { SoundName } from './audio'
 import type { Settings } from './settings'
 import {
   growBlock,
+  hideBlocks,
   sealSpares,
   tap as applyTap,
   undo as applyUndo,
@@ -184,13 +186,17 @@ export function createController(ports: ControllerPorts): Controller {
   let usedDraws: number[] = []
 
   /**
-   * Build the board for a level, then apply the level's spare policy: at or
-   * above `SPARES_LOCK_FROM` the empty tubes start sealed (ticket 09).
-   * Sealing is a game decision, so it happens here — never in the wiring.
+   * Build the board for a level, then apply the level's presentation
+   * policies as game decisions: at or above `SPARES_LOCK_FROM` the empty
+   * tubes start sealed (ticket 09), and at or above `HIDDEN_FROM` a seeded
+   * pick of the tubes holding colours starts concealed (ticket 10). Neither
+   * happens in the wiring; the controller owns the session.
    */
   function buildBoard(next: number): GameState {
     const built = ports.board(next)
-    return next >= SPARES_LOCK_FROM ? sealSpares(built) : built
+    const sealed = next >= SPARES_LOCK_FROM ? sealSpares(built) : built
+    const hidden = pickHiddenTubes(next, sealed.tubes)
+    return hidden.length > 0 ? hideBlocks(sealed, hidden) : sealed
   }
 
   /**

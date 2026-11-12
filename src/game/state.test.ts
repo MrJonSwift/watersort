@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createGame, growBlock, sealSpares, tap, undo } from './state'
+import { createGame, growBlock, hideBlocks, sealSpares, tap, undo } from './state'
 import { pour } from './rules'
 import type { GameState } from './types'
 
@@ -79,5 +79,50 @@ describe('undo keeps earned slots', () => {
     state = undo(state)
     expect(state.tubes[1].colors).toEqual([])
     expect(state.tubes[1].open).toBe(2)
+  })
+})
+
+describe('hideBlocks (ticket 10)', () => {
+  it('conceals the bottom units of the named tubes only', () => {
+    const state = hideBlocks(createGame([[1, 2, 1, 2], [2, 2], []]), [0, 2])
+    expect(state.tubes[0].hidden).toBe(4)
+    expect(state.tubes[1].hidden).toBeUndefined()
+    expect(state.tubes[2].hidden).toBeUndefined() // empty: nothing to hide
+  })
+
+  it('leaves the original state untouched', () => {
+    const state = createGame([[1, 1], [2, 2]])
+    const hidden = hideBlocks(state, [1])
+    expect(state.tubes[1].hidden).toBeUndefined()
+    expect(hidden.tubes[0]).toBe(state.tubes[0]) // untouched tubes are reused
+  })
+})
+
+describe('undo keeps concealment honest (ticket 10)', () => {
+  it('what surfaced and was poured stays seen after an undo', () => {
+    // [1,2] fully concealed: the pour shows the 2 and the 1 surfaces. The
+    // undo returns the liquid but not the secret.
+    const game = createGame([[1, 2], []])
+    let state: GameState = { ...game, tubes: [{ colors: [1, 2], hidden: 2 }, game.tubes[1]] }
+    state = tap(state, 0)
+    state = tap(state, 1)
+    expect(state.tubes[0].hidden).toBe(0)
+    state = undo(state)
+    expect(state.tubes[0].colors).toEqual([1, 2])
+    expect(state.tubes[0].hidden).toBe(0)
+  })
+
+  it('a tube that was never opened is concealed again once the pour is undone', () => {
+    // The poured-in 2s were seen on top and poured back out; the 2s below
+    // were never on screen, so they conceal again exactly as before.
+    const game = createGame([[2, 2], [2, 2]])
+    let state: GameState = { ...game, tubes: [{ colors: [2, 2], hidden: 2 }, game.tubes[1]] }
+    state = tap(state, 1)
+    state = tap(state, 0) // pour 2,2 into the concealed tube
+    expect(state.tubes[0].colors).toEqual([2, 2, 2, 2])
+    expect(state.tubes[0].hidden).toBe(2)
+    state = undo(state)
+    expect(state.tubes[0].colors).toEqual([2, 2])
+    expect(state.tubes[0].hidden).toBe(2) // exactly as concealed as before
   })
 })

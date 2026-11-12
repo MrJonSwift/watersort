@@ -63,6 +63,16 @@ describe('tubeAria', () => {
       'Tube 2, 3 of 4 slots open, 1 filled',
     )
   })
+
+  it('names concealed blocks by count and never by colour (ticket 10)', () => {
+    expect(tubeAria({ colors: [1, 2, 3, 4], hidden: 3 }, 0, 4)).toBe(
+      'Tube 1, 4 of 4 filled, 3 hidden',
+    )
+    expect(tubeAria({ colors: [1, 1], hidden: 1 }, 2, 4)).toBe(
+      'Tube 3, 2 of 4 filled, 1 hidden',
+    )
+    expect(tubeAria({ colors: [1, 1], hidden: 0 }, 0, 4)).toBe('Tube 1, 2 of 4 filled')
+  })
 })
 
 describe('rewardNote', () => {

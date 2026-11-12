@@ -65,15 +65,18 @@ export function rewardNote(reward: Reward): string {
 /**
  * What a tube tells assistive tech, including sealed slots (ticket 09): a
  * sealed spare says so and offers the affordance; a partly open spare reads
- * as its open slot count, never as a complete tube.
+ * as its open slot count, never as a complete tube. Concealed blocks
+ * (ticket 10) are named by count — never by colour, so nothing leaks.
  */
 export function tubeAria(tube: Tube, index: number, capacity: number): string {
   const base = `Tube ${index + 1}`
   const open = openSlots(tube, capacity)
-  if (open >= capacity) return `${base}, ${tube.colors.length} of ${capacity} filled`
+  const concealed = tube.hidden ?? 0
+  const hiddenNote = concealed > 0 ? `, ${concealed} hidden` : ''
+  if (open >= capacity) return `${base}, ${tube.colors.length} of ${capacity} filled${hiddenNote}`
   if (open === 0) return `${base}, sealed, tap to open a slot`
   return tube.colors.length > 0
-    ? `${base}, ${open} of ${capacity} slots open, ${tube.colors.length} filled${
+    ? `${base}, ${open} of ${capacity} slots open, ${tube.colors.length} filled${hiddenNote}${
         isFull(tube, capacity) ? ', full' : ''
       }`
     : `${base}, ${open} of ${capacity} slots open, tap to open a slot`

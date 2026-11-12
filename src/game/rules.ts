@@ -83,10 +83,27 @@ export function pour(state: GameState, from: number, to: number): GameState {
   const amount = pourAmount(state.tubes, from, to, state.capacity)
   if (amount === 0) return state
 
-  const tubes = state.tubes.map((tube) => ({ colors: [...tube.colors], open: tube.open }))
+  const tubes = state.tubes.map((tube) => ({
+    colors: [...tube.colors],
+    open: tube.open,
+    hidden: tube.hidden,
+  }))
   for (let i = 0; i < amount; i++) {
     tubes[to].colors.push(tubes[from].colors.pop() as ColorId)
   }
+
+  /*
+   * Reveal on pour (ticket 10). Concealed units sit at the bottom, so only a
+   * pour that digs past the seen prefix uncovers one — and those units are
+   * revealed by the stream they pour in. Afterwards the tube's new top is
+   * seen as well when everything left is concealed: that unit just surfaced.
+   * The destination keeps its concealment: landed units stack on top, seen.
+   */
+  const source = tubes[from]
+  const seenBefore = source.colors.length + amount - (source.hidden ?? 0)
+  source.hidden = Math.max(0, (source.hidden ?? 0) - Math.max(0, amount - seenBefore))
+  if (source.colors.length === 0) source.hidden = 0
+  else if (source.hidden === source.colors.length) source.hidden -= 1
 
   const next: GameState = {
     ...state,

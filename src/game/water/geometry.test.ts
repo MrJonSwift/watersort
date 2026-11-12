@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  concealedTopY,
   hoverPose,
   localToCanvas,
   sealLineY,
@@ -119,6 +120,30 @@ describe('sealLineY', () => {
   it('is absent for a height it cannot divide', () => {
     expect(sealLineY(0, 4, 2)).toBeNull()
     expect(sealLineY(Number.NaN, 4, 2)).toBeNull()
+  })
+})
+
+describe('concealedTopY', () => {
+  it('measures the top edge of the bottom hidden units from the glass top', () => {
+    expect(concealedTopY(120, 4, 1)).toBe(90) // bottom quarter concealed
+    expect(concealedTopY(120, 4, 3)).toBe(30)
+    expect(concealedTopY(120, 4, 4)).toBe(0) // fully concealed reaches the top
+  })
+
+  it('is absent when nothing is concealed', () => {
+    expect(concealedTopY(120, 4, 0)).toBeNull()
+    expect(concealedTopY(120, 4)).toBeNull()
+    expect(concealedTopY(120, 4, undefined)).toBeNull()
+  })
+
+  it('clamps an out-of-range count to the glass instead of escaping it', () => {
+    expect(concealedTopY(120, 4, 9)).toBe(0)
+    expect(concealedTopY(120, 4, -2)).toBeNull()
+  })
+
+  it('is absent for a height it cannot divide', () => {
+    expect(concealedTopY(0, 4, 2)).toBeNull()
+    expect(concealedTopY(Number.NaN, 4, 2)).toBeNull()
   })
 })
 

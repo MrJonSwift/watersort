@@ -267,6 +267,7 @@ export function createStage(host: HTMLElement): Stage {
           wave: tube ? tube.heights : new Float32Array(0),
           capacity: tube ? tube.capacity : 4,
           open: state?.tubes[i]?.open,
+          hidden: state?.tubes[i]?.hidden,
           opacity: 1,
         }
       }),
