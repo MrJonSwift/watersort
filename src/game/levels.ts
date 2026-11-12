@@ -57,6 +57,16 @@ export const LEVELS: readonly LevelConfig[] = [
 
 export const MAX_LEVEL = LEVELS.length
 
+/**
+ * The level from which spare tubes start sealed (ticket 09): both spares
+ * have no open slots until the player answers challenges at the earn gate,
+ * one block per correct answer. The final tier is where the curve was asked
+ * to bite, so its safety valves are earned there instead of being free.
+ * Levels below it are untouched. Moving this number is a content decision —
+ * it re-skins every level at or above it — and needs a deliberate ticket.
+ */
+export const SPARES_LOCK_FROM = 20
+
 /** Clamp any input into the valid `1..MAX_LEVEL` range. */
 export function clampLevel(level: number): number {
   const safe = Number.isFinite(level) ? Math.trunc(level) : 1

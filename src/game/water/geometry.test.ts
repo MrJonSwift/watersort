@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { hoverPose, localToCanvas, spoutLocal, unitBoundaryYs } from './geometry'
+import {
+  hoverPose,
+  localToCanvas,
+  sealLineY,
+  spoutLocal,
+  unitBoundaryYs,
+  visibleBoundaryYs,
+} from './geometry'
 
 const rect = { x: 100, y: 100, w: 50, h: 120 }
 const target = { x: 300, y: 320, w: 50, h: 120 }
@@ -64,6 +71,54 @@ describe('unitBoundaryYs', () => {
 
   it('returns nothing for a capacity it cannot count', () => {
     expect(unitBoundaryYs(120, Number.POSITIVE_INFINITY)).toEqual([])
+  })
+})
+
+describe('visibleBoundaryYs', () => {
+  it('returns every boundary when nothing is sealed', () => {
+    expect(visibleBoundaryYs(120, 4)).toEqual([30, 60, 90])
+    expect(visibleBoundaryYs(120, 4, 4)).toEqual([30, 60, 90])
+  })
+
+  it('drops boundaries inside the sealed top region', () => {
+    // open 1: only the bottom slot exists; its top edge is the seal line.
+    expect(visibleBoundaryYs(120, 4, 1)).toEqual([])
+    // open 2: one boundary between the two open slots.
+    expect(visibleBoundaryYs(120, 4, 2)).toEqual([90])
+    // open 3: two boundaries in the open region.
+    expect(visibleBoundaryYs(120, 4, 3)).toEqual([60, 90])
+  })
+
+  it('has no guides at all for a wholly sealed spare', () => {
+    expect(visibleBoundaryYs(120, 4, 0)).toEqual([])
+  })
+
+  it('clamps an out-of-range open count instead of guessing', () => {
+    expect(visibleBoundaryYs(120, 4, 9)).toEqual([30, 60, 90])
+    expect(visibleBoundaryYs(120, 4, -3)).toEqual([])
+    expect(visibleBoundaryYs(120, 4, Number.NaN)).toEqual([])
+  })
+})
+
+describe('sealLineY', () => {
+  it('is absent for a fully open tube', () => {
+    expect(sealLineY(120, 4)).toBeNull()
+    expect(sealLineY(120, 4, 4)).toBeNull()
+  })
+
+  it('sits at the edge of the sealed top region', () => {
+    expect(sealLineY(120, 4, 3)).toBe(30)
+    expect(sealLineY(120, 4, 2)).toBe(60)
+    expect(sealLineY(120, 4, 1)).toBe(90)
+  })
+
+  it('sits at the bottom for a wholly sealed spare', () => {
+    expect(sealLineY(120, 4, 0)).toBe(120)
+  })
+
+  it('is absent for a height it cannot divide', () => {
+    expect(sealLineY(0, 4, 2)).toBeNull()
+    expect(sealLineY(Number.NaN, 4, 2)).toBeNull()
   })
 })
 

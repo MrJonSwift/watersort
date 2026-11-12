@@ -16,12 +16,17 @@
  * what makes a whole session testable with fakes.
  */
 import { drawChallenge, type Challenge } from './challenges'
-import { MAX_LEVEL } from './levels'
+import { MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import type { Progress } from './progress'
-import { isComplete } from './rules'
+import { canGrow, isComplete, openSlots } from './rules'
 import type { SoundName } from './audio'
 import type { Settings } from './settings'
-import { tap as applyTap, undo as applyUndo } from './state'
+import {
+  growBlock,
+  sealSpares,
+  tap as applyTap,
+  undo as applyUndo,
+} from './state'
 import type { GameEvent, GameState } from './types'
 import type { StagePrefs } from './water/stage'
 
@@ -42,6 +47,13 @@ export const UNDO_CREDITS = 5
  */
 export const UNDO_CAP = 9
 
+/**
+ * What a correct answer at the gate is worth. The gate only judges the
+ * answer; the caller decides the prize (ticket 08's rule), so a caller
+ * hands its reward in when it opens the gate.
+ */
+export type Reward = { kind: 'undo' } | { kind: 'grow'; tube: number }
+
 /** Presentation-only view of the session, passed alongside the game state. */
 export interface UIView {
   level: number
@@ -53,8 +65,11 @@ export interface UIView {
 
 export interface ControllerUI {
   update(state: GameState, settings: Settings, view: UIView): void
-  /** Show the earn gate with this challenge. The gate is the controller's. */
-  showChallenge(challenge: Challenge): void
+  /**
+   * Show the earn gate with this challenge and the reward at stake, so the
+   * UI can say what a correct answer is worth. The gate is the controller's.
+   */
+  showChallenge(challenge: Challenge, reward: Reward): void
   /** Close the earn gate, whatever the reason: answered, dismissed or redrawn. */
   hideChallenge(): void
 }
@@ -108,8 +123,8 @@ export interface Controller {
   playAgain(): void
   /** Run whatever the primary button currently means. */
   primary(): void
-  /** Open the earn gate. The spent undo button uses this; ticket 09 reuses it. */
-  earn(): void
+  /** Open the earn gate with the reward a correct answer should grant. */
+  earn(request?: Reward): void
   /** Answer the open challenge by option index; a correct answer grants a credit. */
   answer(option: number): void
   /** Close the open challenge without granting anything. */
@@ -155,29 +170,40 @@ function completedCount(game: GameState): number {
 export function createController(ports: ControllerPorts): Controller {
   let progress: Progress = ports.progress.load()
   let level = progress.level
-  let state: GameState = ports.board(level)
+  let state: GameState = buildBoard(progress.level)
   let settings: Settings = ports.settings.load()
   let undoCredits = UNDO_CREDITS
 
   /**
    * The open earn gate, if any. The drawn pack index is what the session
-   * records as seen, so redraws skip it.
+   * records as seen, so redraws skip it; the reward is what a correct
+   * answer grants, decided by whichever affordance opened the gate.
    */
-  let gate: { index: number; challenge: Challenge } | null = null
+  let gate: { index: number; challenge: Challenge; reward: Reward } | null = null
   /** Pack indices already offered this session; the pick skips them. */
   let usedDraws: number[] = []
+
+  /**
+   * Build the board for a level, then apply the level's spare policy: at or
+   * above `SPARES_LOCK_FROM` the empty tubes start sealed (ticket 09).
+   * Sealing is a game decision, so it happens here — never in the wiring.
+   */
+  function buildBoard(next: number): GameState {
+    const built = ports.board(next)
+    return next >= SPARES_LOCK_FROM ? sealSpares(built) : built
+  }
 
   /**
    * The draw seed is the level number: deterministic per session input, no
    * `Math.random`, and the sequence replays in tests. `usedDraws` carries the
    * rest of the state.
    */
-  function openGate(): void {
+  function openGate(reward: Reward): void {
     if (gate) return
     const draw = drawChallenge(level, usedDraws)
     usedDraws = [...usedDraws, draw.index]
-    gate = draw
-    ports.ui.showChallenge(draw.challenge)
+    gate = { ...draw, reward }
+    ports.ui.showChallenge(draw.challenge, reward)
   }
 
   function closeGate(): void {
@@ -245,9 +271,10 @@ export function createController(ports: ControllerPorts): Controller {
 
   function restart(): void {
     if (gateOpen()) return
-    // Same level, same deterministic board: only moves and history reset.
+    // Same level, same deterministic board: only moves and history reset,
+    // and earned slots reseal with it.
     undoCredits = UNDO_CREDITS
-    commit(state, ports.board(level), { type: 'new' })
+    commit(state, buildBoard(level), { type: 'new' })
   }
 
   function nextLevel(): void {
@@ -260,7 +287,7 @@ export function createController(ports: ControllerPorts): Controller {
     progress = { ...progress, level }
     ports.progress.save(progress)
     undoCredits = UNDO_CREDITS
-    commit(state, ports.board(level), { type: 'new' })
+    commit(state, buildBoard(level), { type: 'new' })
   }
 
   function playAgain(): void {
@@ -269,7 +296,7 @@ export function createController(ports: ControllerPorts): Controller {
     progress = { ...progress, level }
     ports.progress.save(progress)
     undoCredits = UNDO_CREDITS
-    commit(state, ports.board(level), { type: 'new' })
+    commit(state, buildBoard(level), { type: 'new' })
   }
 
   function primary(): void {
@@ -300,9 +327,12 @@ export function createController(ports: ControllerPorts): Controller {
     },
 
     start() {
-      // The UI must build the tubes before the stage can measure them.
+      // Mount only: the UI must build the tubes before the stage can measure.
+      // The board was already built (and sealed) with the controller, so this
+      // does not rebuild it; closing a gate keeps a repeat call from leaving
+      // an orphaned dialog on screen.
       undoCredits = UNDO_CREDITS
-      gate = null
+      closeGate()
       usedDraws = []
       ports.ui.update(state, settings, viewFor())
       ports.stage.setPrefs({ pourFx: settings.pourFx })
@@ -313,6 +343,28 @@ export function createController(ports: ControllerPorts): Controller {
     tap(index) {
       if (gateOpen()) return
       const before = state
+      const target = before.tubes[index]
+      // A sealed spare is an earn affordance, not a rejected move: tapping it
+      // with nothing selected asks the gate to grow it. With a selection the
+      // tap is a pour attempt, and a sealed target answers it as invalid —
+      // silently dropping the selection would leave the player guessing.
+      if (target && target.colors.length === 0) {
+        if (openSlots(target, before.capacity) === 0) {
+          if (before.selected === null) {
+            openGate({ kind: 'grow', tube: index })
+          } else {
+            ports.audio.play('invalid')
+            ports.stage.dispatch({ type: 'invalid', index }, before)
+          }
+          return
+        }
+        // An empty partly open spare with nothing selected is also earnable;
+        // with a selection the tap below pours into its open slots.
+        if (before.selected === null && canGrow(target, before.capacity)) {
+          openGate({ kind: 'grow', tube: index })
+          return
+        }
+      }
       const next = applyTap(before, index)
       if (next === before) {
         // Tapping an empty tube is the one rejected move worth answering.
@@ -330,7 +382,7 @@ export function createController(ports: ControllerPorts): Controller {
       if (undoCredits === 0) {
         // The spent undo button is the earn affordance: no credit, open the
         // gate. Whether a credit comes back is the challenge's answer.
-        openGate()
+        openGate({ kind: 'undo' })
         return
       }
       const before = state
@@ -345,23 +397,37 @@ export function createController(ports: ControllerPorts): Controller {
     playAgain,
     primary,
 
-    earn() {
-      openGate()
+    earn(request = { kind: 'undo' }) {
+      openGate(request)
     },
 
     answer(option) {
       if (!gate) return
       const correct = option === gate.challenge.answer
+      const { reward } = gate
       closeGate()
       if (correct) {
-        undoCredits = Math.min(undoCredits + 1, UNDO_CAP)
         ports.audio.play('complete')
         ports.haptic(12)
+        if (reward.kind === 'undo') {
+          undoCredits = Math.min(undoCredits + 1, UNDO_CAP)
+          ports.ui.update(state, settings, viewFor())
+          return
+        }
+        // A grown slot is a state change like any other: commit runs the
+        // same save/feedback/UI/stage order, and the stage pops the tube.
+        const before = state
+        const next = growBlock(before, reward.tube)
+        if (next !== before) {
+          commit(before, next, { type: 'grow', index: reward.tube })
+        } else {
+          ports.ui.update(state, settings, viewFor())
+        }
       } else {
         ports.audio.play('invalid')
         ports.haptic(24)
+        ports.ui.update(state, settings, viewFor())
       }
-      ports.ui.update(state, settings, viewFor())
     },
 
     dismiss() {

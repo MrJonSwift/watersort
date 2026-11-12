@@ -266,6 +266,7 @@ export function createStage(host: HTMLElement): Stage {
           layers,
           wave: tube ? tube.heights : new Float32Array(0),
           capacity: tube ? tube.capacity : 4,
+          open: state?.tubes[i]?.open,
           opacity: 1,
         }
       }),
@@ -525,6 +526,14 @@ export function createStage(host: HTMLElement): Stage {
           node.shakeUntil = performance.now() + SHAKE_MS
           node.shakeAmp = SHAKE_AMP
         }
+        break
+      }
+
+      // A grown slot is a scene change only — the liquid is untouched — so a
+      // small pop acknowledges it, same feedback family as the shake.
+      case 'grow': {
+        const node = nodes[event.index]
+        if (node && animate) node.popUntil = performance.now() + POP_MS
         break
       }
 
