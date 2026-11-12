@@ -9,6 +9,13 @@ export interface Tube {
    * (ticket 09). Undefined when every slot is open — the normal tube.
    */
   open?: number
+  /**
+   * Units concealed at the bottom of this tube (ticket 10): the tube shows
+   * "?" for its lowest `hidden` blocks until they surface. Undefined or zero
+   * when every block shows its colour. Rules never read it — it is pure
+   * knowledge — but `pour` and `undo` keep it honest.
+   */
+  hidden?: number
 }
 
 export interface Move {

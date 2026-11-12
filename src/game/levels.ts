@@ -67,6 +67,25 @@ export const MAX_LEVEL = LEVELS.length
  */
 export const SPARES_LOCK_FROM = 20
 
+/**
+ * The level from which a tube starts with hidden blocks (ticket 10): one of
+ * the tubes that holds colours shows "?" until its segments surface, so the
+ * mid tiers add a knowledge tax before the final tier seals the spares.
+ * Levels below it are untouched. Moving this number is a content decision —
+ * it re-skins every level at or above it — and needs a deliberate ticket.
+ */
+export const HIDDEN_FROM = 15
+
+/**
+ * How many tubes hide their blocks on a level. One on the 7-colour tier;
+ * two from the final tier, where the concealment stacks on the locked
+ * spares. Always zero below `HIDDEN_FROM`.
+ */
+export function hiddenTubeCount(level: number): number {
+  if (level < HIDDEN_FROM) return 0
+  return level >= SPARES_LOCK_FROM ? 2 : 1
+}
+
 /** Clamp any input into the valid `1..MAX_LEVEL` range. */
 export function clampLevel(level: number): number {
   const safe = Number.isFinite(level) ? Math.trunc(level) : 1

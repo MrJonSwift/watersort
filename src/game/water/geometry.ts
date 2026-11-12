@@ -93,6 +93,23 @@ export function sealLineY(height: number, capacity: number, open = capacity): nu
 }
 
 /**
+ * Distance from the top of the glass to the top edge of a tube's concealed
+ * band (ticket 10): the bottom `hidden` units are painted as "?", so the band
+ * reaches from the glass bottom up to this line. A fully concealed tube
+ * reaches the glass top (0), which is a real edge, not "nothing to paint" —
+ * only a count of zero is `null`. A count above the capacity clamps to the
+ * glass rather than escaping it.
+ */
+export function concealedTopY(height: number, capacity: number, hidden = 0): number | null {
+  if (!Number.isFinite(height) || height <= 0) return null
+  if (!Number.isFinite(capacity) || capacity < 1) return null
+  if (!Number.isFinite(hidden)) return null
+  const concealed = Math.min(capacity, Math.max(0, Math.trunc(hidden)))
+  if (concealed === 0) return null
+  return (height * (capacity - concealed)) / capacity
+}
+
+/**
  * Pose that hovers `rect` above `target` so its spout pours into `target`:
  * the tube is lifted until the spout is `gap` px above the target's top edge,
  * and tilted by `tiltDeg` toward the board centre so the body stays on screen.

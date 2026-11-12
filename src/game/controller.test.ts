@@ -11,7 +11,8 @@ import {
   type UIView,
 } from './controller'
 import type { Challenge } from './challenges'
-import { MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
+import { pickHiddenTubes } from './hidden'
+import { HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
@@ -944,5 +945,61 @@ describe('primary', () => {
     h.controller.primary()
     expect(h.controller.level).toBe(1)
     expect(h.controller.progress.highest).toBe(MAX_LEVEL)
+  })
+})
+
+describe('hidden blocks (ticket 10)', () => {
+  it('applies the level pick at and above HIDDEN_FROM', () => {
+    const h = harness([[1, 1], [2, 2], []], {}, { level: HIDDEN_FROM })
+    h.controller.start()
+    const picks = pickHiddenTubes(HIDDEN_FROM, h.controller.state.tubes)
+    expect(picks).toHaveLength(1)
+    expect(h.controller.state.tubes[picks[0]].hidden).toBe(2)
+    // The unpicked tube shows everything.
+    const others = [0, 1, 2].filter((i) => !picks.includes(i))
+    others.forEach((i) => expect(h.controller.state.tubes[i].hidden).toBeUndefined())
+  })
+
+  it('hides two tubes and seals the spares on the final tier', () => {
+    const h = harness([[1, 1], [2, 2], [], []], {}, { level: SPARES_LOCK_FROM })
+    h.controller.start()
+    expect(h.controller.state.tubes[2].open).toBe(0)
+    const picks = pickHiddenTubes(SPARES_LOCK_FROM, h.controller.state.tubes)
+    expect(picks).toHaveLength(2)
+    // The pick never lands on an empty tube, so it stays clear of the seals.
+    picks.forEach((i) => {
+      expect(h.controller.state.tubes[i].hidden).toBe(2)
+      expect(h.controller.state.tubes[i].open).toBeUndefined()
+    })
+  })
+
+  it('hides nothing below HIDDEN_FROM', () => {
+    const h = harness([[1, 1], [2, 2], []], {}, { level: HIDDEN_FROM - 1 })
+    h.controller.start()
+    expect(h.controller.state.tubes.every((tube) => tube.hidden === undefined)).toBe(true)
+  })
+
+  it('reconceals on restart, like undo credits', () => {
+    const h = harness([[1, 1], [2, 2], []], {}, { level: HIDDEN_FROM })
+    h.controller.start()
+    const pick = pickHiddenTubes(HIDDEN_FROM, h.controller.state.tubes)[0]
+    h.controller.tap(pick)
+    h.controller.tap(2) // pour the whole tube out; nothing is concealed any more
+    expect(h.controller.state.tubes[pick].hidden).toBe(0)
+    h.controller.restart()
+    expect(h.controller.state.tubes[pick].hidden).toBe(2)
+  })
+
+  it('an undo keeps what the pour revealed (once seen, stays seen)', () => {
+    const h = harness([[1, 2], [1], []], {}, { level: HIDDEN_FROM })
+    h.controller.start()
+    const pick = pickHiddenTubes(HIDDEN_FROM, h.controller.state.tubes)[0]
+    h.controller.tap(pick)
+    h.controller.tap(2) // the top 2 pours out; the 1 surfaces and is seen
+    expect(h.controller.state.tubes[pick].colors).toEqual([1])
+    expect(h.controller.state.tubes[pick].hidden).toBe(0)
+    h.controller.undo()
+    expect(h.controller.state.tubes[pick].colors).toEqual([1, 2])
+    expect(h.controller.state.tubes[pick].hidden).toBe(0) // knowledge, not liquid
   })
 })

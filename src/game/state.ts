@@ -58,6 +58,24 @@ export function growBlock(state: GameState, index: number): GameState {
   }
 }
 
+/**
+ * Conceal the bottom blocks of the named tubes (ticket 10): a hidden tube
+ * shows "?" until its segments surface at the top. Only tubes holding
+ * colours can hide anything — an empty tube has nothing to conceal, which
+ * keeps the pick clear of sealed spares.
+ */
+export function hideBlocks(state: GameState, indices: readonly number[]): GameState {
+  const picked = new Set(indices)
+  return {
+    ...state,
+    tubes: state.tubes.map((tube, index) =>
+      picked.has(index) && tube.colors.length > 0
+        ? { colors: [...tube.colors], hidden: tube.colors.length }
+        : tube,
+    ),
+  }
+}
+
 /** Handle a tap on a tube: select it, deselect it, or pour. */
 export function tap(state: GameState, index: number): GameState {
   if (state.won) return state
@@ -86,7 +104,13 @@ export function undo(state: GameState): GameState {
   if (!last) return state
 
   // Earned slots survive an undo: they are session progress, not liquid.
-  const tubes = state.tubes.map((tube) => ({ colors: [...tube.colors], open: tube.open }))
+  // Concealment (ticket 10) is knowledge, not liquid either: what was poured
+  // has been seen and stays seen, so the counts ride along untouched.
+  const tubes = state.tubes.map((tube) => ({
+    colors: [...tube.colors],
+    open: tube.open,
+    hidden: tube.hidden,
+  }))
   for (let i = 0; i < last.amount; i++) {
     tubes[last.from].colors.push(tubes[last.to].colors.pop() as ColorId)
   }

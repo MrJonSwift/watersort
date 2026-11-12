@@ -177,3 +177,68 @@ describe('open slots (locked spares)', () => {
     expect(canGrow(tube(), 4)).toBe(false) // fully open
   })
 })
+
+describe('pour reveals concealed blocks (ticket 10)', () => {
+  /** A tube with its bottom `hidden` units concealed. */
+  const concealed = (hidden: number, ...colors: ColorId[]): Tube => ({ colors, hidden })
+
+  it('reveals the poured units and the unit that surfaces beneath them', () => {
+    // Fully concealed [1,2,2,2]: pouring the 2-run onto a half-full 2-tube
+    // shows both poured 2s in the stream, and the third 2 surfaces to the
+    // top and is seen.
+    const state = createGame([[1, 2, 2, 2], [2, 2]])
+    const start = { ...state, tubes: [concealed(4, 1, 2, 2, 2), state.tubes[1]] }
+    const next = pour(start, 0, 1)
+    expect(next.tubes[0].colors).toEqual([1, 2])
+    expect(next.tubes[0].hidden).toBe(1)
+    expect(next.tubes[1].colors).toEqual([2, 2, 2, 2])
+  })
+
+  it('uncovers nothing when the pour stays inside the seen prefix', () => {
+    // [1,2,2] with only the bottom 1 concealed: the one poured unit was
+    // seen, and the top 2 remains above the concealed 1, which never
+    // surfaces.
+    const state = createGame([[1, 2, 2], [2, 2, 2]])
+    const start = { ...state, tubes: [concealed(1, 1, 2, 2), state.tubes[1]] }
+    const next = pour(start, 0, 1)
+    expect(next.tubes[0].colors).toEqual([1, 2])
+    expect(next.tubes[0].hidden).toBe(1) // untouched: the bottom 1 is still secret
+  })
+
+  it('reveals the last concealed unit only when it truly surfaces', () => {
+    const state = createGame([[1, 1, 2], []])
+    const start = { ...state, tubes: [concealed(2, 1, 1, 2), state.tubes[1]] }
+    const next = pour(start, 0, 1)
+    expect(next.tubes[0].colors).toEqual([1, 1])
+    expect(next.tubes[0].hidden).toBe(1) // the 2 left; the top 1 surfaced
+  })
+
+  it('leaves the destination concealed: landed units are seen, the bottom is not', () => {
+    const state = createGame([[2], [2, 2]])
+    const start = {
+      ...state,
+      tubes: [state.tubes[0], concealed(2, 2, 2)],
+    }
+    const next = pour(start, 0, 1)
+    expect(next.tubes[1].colors).toEqual([2, 2, 2])
+    expect(next.tubes[1].hidden).toBe(2)
+    expect(next.tubes[0].hidden).toBe(0) // emptied: nothing left to conceal
+  })
+
+  it('clears the count when a pour empties the tube', () => {
+    const state = createGame([[1, 1], []])
+    const start = { ...state, tubes: [concealed(2, 1, 1), state.tubes[1]] }
+    const next = pour(start, 0, 1)
+    expect(next.tubes[0].colors).toEqual([])
+    expect(next.tubes[0].hidden).toBe(0)
+  })
+
+  it('carries the count through an ordinary pour unchanged', () => {
+    const state = createGame([[1, 1], []])
+    const start = { ...state, tubes: [concealed(1, 1, 1, 2), state.tubes[1]] }
+    const next = pour(start, 0, 1)
+    expect(next.tubes[0].colors).toEqual([1, 1])
+    expect(next.tubes[0].hidden).toBe(1) // the poured 2 was seen; the bottom 1 stays
+    expect(next.tubes[1].hidden).toBeUndefined()
+  })
+})

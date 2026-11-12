@@ -6,7 +6,7 @@
 import type { ColorId } from '../types'
 import { darken, lighten, rgbCss, rgbOf, type RGB } from '../palette'
 import type { ParticleKind } from './physics'
-import { sealLineY, visibleBoundaryYs, type Pose, type Rect } from './geometry'
+import { sealLineY, visibleBoundaryYs, concealedTopY, type Pose, type Rect } from './geometry'
 
 export interface LayerView {
   color: ColorId
@@ -27,6 +27,8 @@ export interface TubeView {
   capacity: number
   /** Slots currently open; undefined when nothing is sealed (ticket 09). */
   open?: number
+  /** Bottom units painted as "?"; undefined or 0 when all show (ticket 10). */
+  hidden?: number
   opacity: number
 }
 
@@ -81,6 +83,17 @@ const GUIDE_WIDTH_PX = 1
  */
 const SEALED_ALPHA = 0.2
 const SEAL_LINE_ALPHA = 0.38
+
+/*
+ * A hidden tube (ticket 10) paints its concealed bottom units as one opaque
+ * dark slab — the real colours are underneath and must not read through —
+ * with one "?" per concealed unit and faint unit separators, so the band
+ * reads as blocks matching the guides above.
+ */
+const HIDDEN_BASE: RGB = [34, 39, 48]
+const HIDDEN_EDGE_ALPHA = 0.22
+const HIDDEN_GLYPH_ALPHA = 0.38
+const HIDDEN_LINE_ALPHA = 0.08
 
 export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene): void {
   for (const tube of scene.tubes) drawTube(ctx, tube)
@@ -232,6 +245,42 @@ function drawTube(ctx: CanvasRenderingContext2D, tube: TubeView): void {
       ctx.strokeStyle = rgbCss(WHITE, SEAL_LINE_ALPHA)
       ctx.lineWidth = GUIDE_WIDTH_PX
       ctx.stroke()
+    }
+  }
+
+  // The concealed band (ticket 10), painted last so no colour or guide reads
+  // through: an opaque slab from the glass bottom to `concealedTopY`, one
+  // "?" per concealed unit. Drawn in tube-local space, so it moves with the
+  // pose like the liquid it covers.
+  const hiddenY = concealedTopY(rect.h, capacity, tube.hidden)
+  if (hiddenY !== null) {
+    const unit = rect.h / capacity
+    const concealed = Math.round((rect.h - hiddenY) / unit)
+    const bandTop = rect.y + hiddenY
+    ctx.fillStyle = rgbCss(HIDDEN_BASE)
+    ctx.fillRect(rect.x, bandTop, rect.w, rect.h - hiddenY)
+
+    // Faint separators between the concealed units, echoing the guides.
+    ctx.beginPath()
+    for (let i = 1; i < concealed; i++) {
+      const y = bandTop + i * unit
+      ctx.moveTo(rect.x + GUIDE_INSET_PX, y)
+      ctx.lineTo(rect.x + rect.w - GUIDE_INSET_PX, y)
+    }
+    ctx.strokeStyle = rgbCss(WHITE, HIDDEN_LINE_ALPHA)
+    ctx.lineWidth = GUIDE_WIDTH_PX
+    ctx.stroke()
+
+    ctx.fillStyle = rgbCss(WHITE, HIDDEN_EDGE_ALPHA)
+    ctx.fillRect(rect.x, bandTop, rect.w, GUIDE_WIDTH_PX)
+
+    // One "?" per concealed unit, centred in its slot.
+    ctx.fillStyle = rgbCss(WHITE, HIDDEN_GLYPH_ALPHA)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `600 ${Math.round(unit * 0.52)}px system-ui, sans-serif`
+    for (let i = 0; i < concealed; i++) {
+      ctx.fillText('?', rect.x + rect.w / 2, bandTop + (i + 0.5) * unit)
     }
   }
 
