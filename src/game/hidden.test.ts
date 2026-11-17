@@ -33,9 +33,10 @@ describe('pickHiddenTubes', () => {
     expect(pickHiddenTubes(20, board)).toEqual(pickHiddenTubes(20, board))
   })
 
-  it('picks only tubes that hold colours, however the board is laid out', () => {
+  it('picks only tubes holding two or more units (ticket 13), however the board is laid out', () => {
     const picks = pickHiddenTubes(20, board)
-    expect(picks).toEqual(picks.filter((index) => board[index].colors.length > 0))
+    expect(picks).toEqual(picks.filter((index) => board[index].colors.length > 1))
+    expect(picks).not.toContain(1) // one unit: the top would be seen, nothing to hide
     expect(picks).not.toContain(2) // empty
     expect(picks).not.toContain(4) // empty
   })
@@ -46,8 +47,12 @@ describe('pickHiddenTubes', () => {
     expect(new Set(picks).size).toBe(picks.length)
   })
 
+  it('picks nothing when every tube would conceal nothing', () => {
+    expect(pickHiddenTubes(20, [tube(1), tube(2), tube(3)])).toEqual([])
+  })
+
   it('takes every candidate when the board cannot supply the count', () => {
-    expect(pickHiddenTubes(20, [tube(1), tube()])).toEqual([0])
+    expect(pickHiddenTubes(20, [tube(1, 1), tube()])).toEqual([0])
   })
 
   it('asks for nothing below the tier, whatever the board looks like', () => {
@@ -69,7 +74,7 @@ describe('per-level pick (integration pin)', () => {
   it('hides the same tubes of the real boards on every device', () => {
     // Same level, same board, same pick: a re-roll of either the generator or
     // the pick shows up here and must be a deliberate content decision.
-    expect(pickHiddenTubes(15, realTubes(15))).toEqual([4])
+    expect(pickHiddenTubes(15, realTubes(15))).toEqual([7]) // re-pinned in ticket 13
     expect(pickHiddenTubes(20, realTubes(20))).toEqual([1, 9])
   })
 })

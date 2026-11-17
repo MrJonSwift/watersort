@@ -21,14 +21,16 @@ function mix(n: number): number {
 /**
  * The indices of the tubes that start hidden, in pick order.
  *
- * Only tubes holding colours are candidates — an empty tube has nothing to
- * hide, which also keeps the pick clear of the sealed spares. When the level
- * asks for more tubes than the board can offer, every candidate is picked.
+ * Only tubes holding at least two units are candidates (ticket 13): the top
+ * unit of a hidden tube is always seen, so a one-unit tube would conceal
+ * nothing. The rule also keeps the pick clear of the sealed spares — an empty
+ * tube has nothing to hide. When the level asks for more tubes than the board
+ * can offer, every candidate is picked.
  */
 export function pickHiddenTubes(level: number, tubes: readonly Tube[]): number[] {
   const candidates = tubes
     .map((_, index) => index)
-    .filter((index) => tubes[index].colors.length > 0)
+    .filter((index) => tubes[index].colors.length > 1)
   const count = Math.min(hiddenTubeCount(level), candidates.length)
 
   const picked: number[] = []

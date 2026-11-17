@@ -59,18 +59,21 @@ export function growBlock(state: GameState, index: number): GameState {
 }
 
 /**
- * Conceal the bottom blocks of the named tubes (ticket 10): a hidden tube
- * shows "?" until its segments surface at the top. Only tubes holding
- * colours can hide anything — an empty tube has nothing to conceal, which
- * keeps the pick clear of sealed spares.
+ * Conceal the bottom blocks of the named tubes: a hidden tube shows "?" until
+ * its segments surface at the top. Only tubes holding colours can hide
+ * anything — an empty tube has nothing to conceal, which keeps the pick clear
+ * of sealed spares.
+ *
+ * Since ticket 13 the top unit is always seen: a hidden tube of N units
+ * conceals N−1 of them, so a one-unit tube hides nothing.
  */
 export function hideBlocks(state: GameState, indices: readonly number[]): GameState {
   const picked = new Set(indices)
   return {
     ...state,
     tubes: state.tubes.map((tube, index) =>
-      picked.has(index) && tube.colors.length > 0
-        ? { colors: [...tube.colors], hidden: tube.colors.length }
+      picked.has(index) && tube.colors.length > 1
+        ? { colors: [...tube.colors], hidden: tube.colors.length - 1 }
         : tube,
     ),
   }

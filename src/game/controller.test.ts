@@ -956,7 +956,7 @@ describe('hidden blocks (ticket 10)', () => {
     h.controller.start()
     const picks = pickHiddenTubes(HIDDEN_FROM, h.controller.state.tubes)
     expect(picks).toHaveLength(1)
-    expect(h.controller.state.tubes[picks[0]].hidden).toBe(2)
+    expect(h.controller.state.tubes[picks[0]].hidden).toBe(1)
     // The unpicked tube shows everything.
     const others = [0, 1, 2].filter((i) => !picks.includes(i))
     others.forEach((i) => expect(h.controller.state.tubes[i].hidden).toBeUndefined())
@@ -970,7 +970,7 @@ describe('hidden blocks (ticket 10)', () => {
     expect(picks).toHaveLength(2)
     // The pick never lands on an empty tube, so it stays clear of the seals.
     picks.forEach((i) => {
-      expect(h.controller.state.tubes[i].hidden).toBe(2)
+      expect(h.controller.state.tubes[i].hidden).toBe(1)
       expect(h.controller.state.tubes[i].open).toBeUndefined()
     })
   })
@@ -989,7 +989,7 @@ describe('hidden blocks (ticket 10)', () => {
     h.controller.tap(2) // pour the whole tube out; nothing is concealed any more
     expect(h.controller.state.tubes[pick].hidden).toBe(0)
     h.controller.restart()
-    expect(h.controller.state.tubes[pick].hidden).toBe(2)
+    expect(h.controller.state.tubes[pick].hidden).toBe(1)
   })
 
   it('an undo keeps what the pour revealed (once seen, stays seen)', () => {
@@ -1008,7 +1008,7 @@ describe('hidden blocks (ticket 10)', () => {
 
 describe('level jump (ticket 11)', () => {
   it('builds the level the shortcut asks for, with its policies applied', () => {
-    const h = harness(Array.from({ length: 9 }, () => [1]), {}, { level: 3, highest: 3 }, 15)
+    const h = harness(Array.from({ length: 9 }, () => [1, 2]), {}, { level: 3, highest: 3 }, 15)
     h.controller.start()
     expect(h.boards).toEqual([15])
     expect(h.controller.level).toBe(15)

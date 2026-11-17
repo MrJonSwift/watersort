@@ -82,12 +82,18 @@ describe('undo keeps earned slots', () => {
   })
 })
 
-describe('hideBlocks (ticket 10)', () => {
-  it('conceals the bottom units of the named tubes only', () => {
+describe('hideBlocks', () => {
+  it('conceals all but the top unit of the named tubes (ticket 13)', () => {
     const state = hideBlocks(createGame([[1, 2, 1, 2], [2, 2], []]), [0, 2])
-    expect(state.tubes[0].hidden).toBe(4)
+    expect(state.tubes[0].hidden).toBe(3) // the top 2 is seen, three units below stay secret
     expect(state.tubes[1].hidden).toBeUndefined()
     expect(state.tubes[2].hidden).toBeUndefined() // empty: nothing to hide
+  })
+
+  it('hides nothing on a one-unit tube: the top unit is always seen', () => {
+    const state = hideBlocks(createGame([[1], [2, 2]]), [0, 1])
+    expect(state.tubes[0].hidden).toBeUndefined()
+    expect(state.tubes[1].hidden).toBe(1)
   })
 
   it('leaves the original state untouched', () => {

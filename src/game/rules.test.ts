@@ -183,11 +183,12 @@ describe('pour reveals concealed blocks (ticket 10)', () => {
   const concealed = (hidden: number, ...colors: ColorId[]): Tube => ({ colors, hidden })
 
   it('reveals the poured units and the unit that surfaces beneath them', () => {
-    // Fully concealed [1,2,2,2]: pouring the 2-run onto a half-full 2-tube
-    // shows both poured 2s in the stream, and the third 2 surfaces to the
-    // top and is seen.
+    // Fully concealed at deal is gone (ticket 13): a dealt hidden tube is
+    // [1,2,2,2] with the top 2 seen and three units concealed. Pouring the
+    // 2-run onto a half-full 2-tube shows both poured 2s in the stream, and
+    // the third 2 surfaces to the top and is seen.
     const state = createGame([[1, 2, 2, 2], [2, 2]])
-    const start = { ...state, tubes: [concealed(4, 1, 2, 2, 2), state.tubes[1]] }
+    const start = { ...state, tubes: [concealed(3, 1, 2, 2, 2), state.tubes[1]] }
     const next = pour(start, 0, 1)
     expect(next.tubes[0].colors).toEqual([1, 2])
     expect(next.tubes[0].hidden).toBe(1)
