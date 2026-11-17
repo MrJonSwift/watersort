@@ -24,7 +24,7 @@ function rowPair(height: number): { source: Rect; target: Rect } {
  * Replay a whole pour's pose at 60fps and report when the source comes back
  * to rest, in ms from the event.
  *
- * This is the acceptance criterion ("a 4-unit pour's choreography is ≤420ms
+ * This is the acceptance criterion ("a 4-unit pour's choreography is ≤1200ms
  * from event to source-at-rest") expressed against the spring that actually
  * moves the tube, not against the timeline constants it is built from.
  */

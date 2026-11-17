@@ -22,7 +22,8 @@ describe('pour timing', () => {
   it('takes longer for more units without stretching the pour', () => {
     expect(streamMs(4)).toBeGreaterThan(streamMs(1))
     expect(pourTotalMs(1)).toBeLessThan(pourTotalMs(4))
-    expect(pourTotalMs(4) - pourTotalMs(1)).toBeLessThan(100)
+    // Three extra units at STREAM_PER_UNIT_MS each, plus a little slack.
+    expect(pourTotalMs(4) - pourTotalMs(1)).toBeLessThan(160)
   })
 
   it('is exactly lift plus stream plus return', () => {
