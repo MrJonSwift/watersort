@@ -15,7 +15,6 @@ import { applyPaletteToCss } from './game/palette'
 import { loadProgress, saveProgress } from './game/progress'
 import { parseLevelJump } from './game/query'
 import { loadSettings, saveSettings } from './game/settings'
-import { createGame } from './game/state'
 import { createUI } from './game/ui'
 import { createStage } from './game/water/stage'
 
@@ -66,7 +65,7 @@ controller = createController({
   settings: { load: loadSettings, save: saveSettings },
   progress: { load: loadProgress, save: saveProgress },
   startAt: startAt ?? undefined,
-  board: (level) => createGame(generateLevel(level).board),
+  board: (level) => generateLevel(level),
 })
 
 preventDoubleTapZoom(app)

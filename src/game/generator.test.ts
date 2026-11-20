@@ -4,9 +4,9 @@ import {
   generateLevel,
   type Level,
 } from './generator'
-import { LEVELS, MAX_LEVEL, levelConfig, type LevelConfig } from './levels'
+import { LEVELS, MAX_LEVEL, SPARES_LOCK_FROM, levelConfig, type LevelConfig } from './levels'
 import { DEFAULT_CAPACITY, isComplete, isWon } from './rules'
-import { createGame, tap } from './state'
+import { createGame, sealSpares, tap } from './state'
 import type { GameState } from './types'
 
 const CAP = DEFAULT_CAPACITY
@@ -22,8 +22,8 @@ function runCount(board: readonly (readonly number[])[]): number {
   return runs
 }
 
-function replay(level: Level): GameState {
-  let state = createGame(level.board)
+function replayMoves(start: GameState, level: Level): GameState {
+  let state = start
   for (const move of level.solution) {
     const before = state
     const selected = tap(state, move.from)
@@ -40,6 +40,19 @@ function replay(level: Level): GameState {
     })
   }
   return state
+}
+
+function replay(level: Level): GameState {
+  return replayMoves(createGame(level.board), level)
+}
+
+/**
+ * Ticket 14's new quality bar: the solution still wins with every spare the
+ * solution never touches held shut at `open = 0`. Sealing only those empties
+ * makes this true by construction, so a lock can never be a toll on the path.
+ */
+function replaySealed(level: Level): GameState {
+  return replayMoves(sealSpares(createGame(level.board), level.solution), level)
 }
 
 function expectHardRequirements(level: Level, config: LevelConfig): void {
@@ -62,6 +75,10 @@ function expectHardRequirements(level: Level, config: LevelConfig): void {
   const finished = replay(level)
   expect(isWon(finished)).toBe(true)
   expect(finished.moves).toBe(level.solution.length)
+
+  // Ticket 14: the validated solution also wins with its unused empties
+  // sealed. The original gate above stays exactly as strict as it was.
+  expect(isWon(replaySealed(level))).toBe(true)
 }
 
 describe('generateBoard', () => {
@@ -182,5 +199,31 @@ describe('generateLevel', () => {
   it('clamps out-of-range level numbers', () => {
     expect(generateLevel(0)).toEqual(generateLevel(1))
     expect(generateLevel(999)).toEqual(generateLevel(MAX_LEVEL))
+  })
+
+  it('replays through a real lock when a solution leaves an empty unused', () => {
+    // A board shaped like a locked level: the solution uses empty 2, leaves
+    // empty 3 shut. This keeps the new gate non-vacuous even though every
+    // shipped 20–30 board happens to use all of its empties.
+    const level: Level = {
+      board: [[1, 1, 1], [1], [], []],
+      solution: [
+        { from: 1, to: 2, amount: 1 },
+        { from: 2, to: 0, amount: 1 },
+      ],
+    }
+    expect(sealSpares(createGame(level.board), level.solution).tubes[3].open).toBe(0)
+    expect(isWon(replaySealed(level))).toBe(true)
+  })
+
+  it('leaves no shipped locked-tier level needing a question to be won', () => {
+    // Probe of levels 20–30 (ticket 14): every empty on those boards is a
+    // solution destination, so solution-aware sealing leaves no padlock at
+    // all. Recorded here so a board re-roll — a content decision — shows up.
+    for (let level = SPARES_LOCK_FROM; level <= MAX_LEVEL; level++) {
+      const { board, solution } = generateLevel(level)
+      const sealed = sealSpares(createGame(board), solution)
+      expect(sealed.tubes.some((tube) => tube.open === 0), `level ${level}`).toBe(false)
+    }
   })
 })

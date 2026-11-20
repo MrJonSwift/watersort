@@ -16,6 +16,7 @@
  * what makes a whole session testable with fakes.
  */
 import { drawChallenge, type Challenge } from './challenges'
+import type { Level } from './generator'
 import { pickHiddenTubes } from './hidden'
 import { MAX_LEVEL, SPARES_LOCK_FROM, clampLevel } from './levels'
 import type { Progress } from './progress'
@@ -23,6 +24,7 @@ import { canGrow, isComplete, openSlots } from './rules'
 import type { SoundName } from './audio'
 import type { Settings } from './settings'
 import {
+  createGame,
   growBlock,
   hideBlocks,
   sealSpares,
@@ -114,8 +116,13 @@ export interface ControllerPorts {
    * jump becomes the saved position, so a reload resumes there.
    */
   startAt?: number
-  /** Build the deterministic board for a numbered level. */
-  board(level: number): GameState
+  /**
+   * Build the deterministic board and its validated solution for a numbered
+   * level. The solution travels with the board because sealing is
+   * solution-aware (ticket 14): the controller needs to know which empties the
+   * solution pours into before it decides which spares to lock.
+   */
+  board(level: number): Level
 }
 
 export interface Controller {
@@ -211,14 +218,16 @@ export function createController(ports: ControllerPorts): Controller {
 
   /**
    * Build the board for a level, then apply the level's presentation
-   * policies as game decisions: at or above `SPARES_LOCK_FROM` the empty
-   * tubes start sealed (ticket 09), and at or above `HIDDEN_FROM` a seeded
-   * pick of the tubes holding colours starts concealed (ticket 10). Neither
-   * happens in the wiring; the controller owns the session.
+   * policies as game decisions: at or above `SPARES_LOCK_FROM` only the empty
+   * tubes the solution never pours into start sealed (ticket 14, refining
+   * ticket 09), and at or above `HIDDEN_FROM` a seeded pick of the tubes
+   * holding colours starts concealed (ticket 10). Neither happens in the
+   * wiring; the controller owns the session.
    */
   function buildBoard(next: number): GameState {
-    const built = ports.board(next)
-    const sealed = next >= SPARES_LOCK_FROM ? sealSpares(built) : built
+    const { board, solution } = ports.board(next)
+    const built = createGame(board)
+    const sealed = next >= SPARES_LOCK_FROM ? sealSpares(built, solution) : built
     const hidden = pickHiddenTubes(next, sealed.tubes)
     return hidden.length > 0 ? hideBlocks(sealed, hidden) : sealed
   }

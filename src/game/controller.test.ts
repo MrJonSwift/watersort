@@ -18,7 +18,7 @@ import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
 import { createGame } from './state'
 import type { SoundName } from './audio'
-import type { GameEvent, GameState } from './types'
+import type { GameEvent, GameState, Move } from './types'
 import type { StagePrefs } from './water/stage'
 
 /* --------------------------------------------------------------- fakes ---- */
@@ -53,6 +53,7 @@ function harness(
   settings: Partial<Settings> = {},
   progress: Partial<Progress> = {},
   startAt?: number,
+  solution: Move[] = [],
 ): Harness {
   const events: GameEvent[] = []
   const dispatched: GameState[] = []
@@ -129,7 +130,10 @@ function harness(
     startAt,
     board(level) {
       boards.push(level)
-      return createGame(board.map((colors) => [...colors]))
+      return {
+        board: board.map((colors) => [...colors]),
+        solution: solution.map((move) => ({ ...move })),
+      }
     },
   }
 
@@ -765,6 +769,64 @@ describe('locked spares (ticket 09)', () => {
     h.controller.start()
     h.controller.earn()
     expect(h.rewards).toEqual([{ kind: 'undo' }])
+  })
+})
+
+describe('optional spares (ticket 14)', () => {
+  const locked = { level: SPARES_LOCK_FROM, highest: SPARES_LOCK_FROM }
+
+  /**
+   * `[[1,1,1],[1],[],[]]`: tip tube 1 into empty tube 2, then tip tube 2 into
+   * tube 0 to complete it. The solution uses empty 2 but never empty 3, so 2
+   * stays open and 3 is the optional lock.
+   */
+  const solution: Move[] = [
+    { from: 1, to: 2, amount: 1 },
+    { from: 2, to: 0, amount: 1 },
+  ]
+
+  it('seals only the empty the solution never pours into', () => {
+    const h = harness([[1, 1, 1], [1], [], []], {}, locked, undefined, solution)
+    h.controller.start()
+    expect(h.controller.state.tubes.map((tube) => tube.open)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      0,
+    ])
+  })
+
+  it('wins by replaying the solution without ever opening the gate', () => {
+    const h = harness([[1, 1, 1], [1], [], []], {}, locked, undefined, solution)
+    h.controller.start()
+
+    for (const move of solution) {
+      h.controller.tap(move.from)
+      h.controller.tap(move.to)
+    }
+
+    expect(h.controller.state.won).toBe(true)
+    expect(h.controller.state.tubes[3].open).toBe(0) // the lock stayed shut
+    expect(h.challengeShows).toEqual([])
+    expect(h.rewards).toEqual([])
+  })
+
+  it('shows no lock when the solution pours into every empty', () => {
+    const both: Move[] = [
+      { from: 1, to: 2, amount: 1 },
+      { from: 2, to: 3, amount: 1 },
+      { from: 3, to: 0, amount: 1 },
+    ]
+    const h = harness([[1, 1, 1], [1], [], []], {}, locked, undefined, both)
+    h.controller.start()
+    expect(h.controller.state.tubes.every((tube) => tube.open === undefined)).toBe(true)
+
+    for (const move of both) {
+      h.controller.tap(move.from)
+      h.controller.tap(move.to)
+    }
+    expect(h.controller.state.won).toBe(true)
+    expect(h.challengeShows).toEqual([])
   })
 })
 

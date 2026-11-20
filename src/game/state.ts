@@ -1,5 +1,5 @@
 import { DEFAULT_CAPACITY, canGrow, canPour, openSlots, pour } from './rules'
-import type { ColorId, GameState } from './types'
+import type { ColorId, GameState, Move } from './types'
 
 /*
  * Tubes are treated as immutable values: state changes either copy the tubes
@@ -23,21 +23,27 @@ export function createGame(
 }
 
 /**
- * Seal the board's spare tubes (ticket 09): every tube that starts empty is
- * the level's safety valve, and a sealed one has no open slots until the
- * player earns them at the gate, one block per correct answer.
+ * Seal the board's spare tubes that the level's validated solution never uses
+ * (tickets 09 and 14). A sealed spare has no open slots until the player earns
+ * them at the gate, one block per correct answer — but it is always optional:
+ * because the solution never pours into a sealed tube, replaying it unchanged
+ * wins with the sealed set held at `open = 0` forever.
  *
  * The generator scrambles into the spares, so a "spare" is not a fixed index:
- * it is whichever tube is empty on this board. A board with no empty tube has
- * no safety valve to earn and is left alone — those levels are already the
- * hardest, and sealing water would be nonsense. Tubes holding colours never
- * carry `open`.
+ * it is whichever tube is empty on this board. An empty the solution pours
+ * into (it is a `to` in any recorded move) stays fully open and is never
+ * locked — sealing it would put a toll on the solution path. If the solution
+ * uses every empty, no tube is sealed at all; that is recorded, deliberate,
+ * and preferable to re-rolling a board people have already played.
+ *
+ * Tubes holding colours never carry `open`; rules never read the solution.
  */
-export function sealSpares(state: GameState): GameState {
+export function sealSpares(state: GameState, solution: readonly Move[]): GameState {
+  const used = new Set(solution.map((move) => move.to))
   return {
     ...state,
-    tubes: state.tubes.map((tube) =>
-      tube.colors.length === 0 ? { colors: [], open: 0 } : tube,
+    tubes: state.tubes.map((tube, index) =>
+      tube.colors.length === 0 && !used.has(index) ? { colors: [], open: 0 } : tube,
     ),
   }
 }

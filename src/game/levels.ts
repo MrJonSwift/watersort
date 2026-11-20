@@ -58,12 +58,14 @@ export const LEVELS: readonly LevelConfig[] = [
 export const MAX_LEVEL = LEVELS.length
 
 /**
- * The level from which spare tubes start sealed (ticket 09): both spares
- * have no open slots until the player answers challenges at the earn gate,
- * one block per correct answer. The final tier is where the curve was asked
- * to bite, so its safety valves are earned there instead of being free.
- * Levels below it are untouched. Moving this number is a content decision —
- * it re-skins every level at or above it — and needs a deliberate ticket.
+ * The level from which spare tubes may start sealed (tickets 09 and 14). Only
+ * an empty the level's validated solution never pours into is locked: the
+ * spare is an optional escape hatch, never a toll on the solution path. An
+ * empty the solution uses stays fully open, and a level whose solution uses
+ * every empty shows no lock at all — on the shipped 20–30 curve that is every
+ * level, recorded deliberately rather than re-rolling boards. Tubes holding
+ * colours are never sealed. Levels below this number are untouched. Moving it
+ * is a content decision that needs a deliberate ticket.
  */
 export const SPARES_LOCK_FROM = 20
 

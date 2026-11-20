@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createGame, growBlock, hideBlocks, sealSpares, tap, undo } from './state'
 import { pour } from './rules'
-import type { GameState } from './types'
+import type { GameState, Move } from './types'
 
 /** A fresh board whose second tube is a partly grown spare. */
 function opened(): GameState {
@@ -10,24 +10,50 @@ function opened(): GameState {
 }
 
 describe('sealSpares', () => {
-  it('seals every tube that starts empty, wherever it sits on the board', () => {
-    const state = sealSpares(createGame([[1, 2, 1, 2], [2], [], []]))
+  const board = [[1, 2, 1, 2], [2], [], []]
+
+  it('seals an empty the solution never pours into (ticket 14)', () => {
+    // Only empty 2 is a solution destination; empty 3 is untouched and locks.
+    const solution: Move[] = [{ from: 0, to: 2, amount: 1 }]
+    const state = sealSpares(createGame(board), solution)
+    expect(state.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, undefined, 0])
+  })
+
+  it('leaves an empty the solution pours into fully open', () => {
+    const solution: Move[] = [{ from: 0, to: 3, amount: 1 }]
+    const state = sealSpares(createGame(board), solution)
+    expect(state.tubes[3].open).toBeUndefined()
+    expect(state.tubes[2].open).toBe(0)
+  })
+
+  it('seals every empty when the solution uses none of them', () => {
+    const state = sealSpares(createGame(board), [])
     expect(state.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, 0, 0])
   })
 
-  it('never seals a tube holding colours', () => {
-    const state = sealSpares(createGame([[1], [2, 2]]))
+  it('seals nothing when the solution uses every empty', () => {
+    const solution: Move[] = [
+      { from: 0, to: 2, amount: 1 },
+      { from: 0, to: 3, amount: 1 },
+    ]
+    const state = sealSpares(createGame(board), solution)
+    expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
+  })
+
+  it('never seals a tube holding colours, wherever the solution pours', () => {
+    const solution: Move[] = [{ from: 1, to: 0, amount: 1 }]
+    const state = sealSpares(createGame([[1], [2, 2]]), solution)
     expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
   })
 
   it('leaves a board with no empty tube alone', () => {
-    const state = sealSpares(createGame([[1, 1], [2, 2]]))
+    const state = sealSpares(createGame([[1, 1], [2, 2]]), [])
     expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
   })
 
   it('leaves everything else untouched', () => {
     const state = createGame([[1], []])
-    const sealed = sealSpares(state)
+    const sealed = sealSpares(state, [])
     expect(sealed.capacity).toBe(state.capacity)
     expect(sealed.tubes[0]).toEqual(state.tubes[0])
   })
@@ -57,7 +83,7 @@ describe('growBlock', () => {
   })
 
   it('is the seam between a sealed board and a playable pour', () => {
-    let state = sealSpares(createGame([[1, 1, 1], []]))
+    let state = sealSpares(createGame([[1, 1, 1], []]), [])
     expect(pour(state, 0, 1)).toBe(state) // sealed: nothing fits
 
     state = growBlock(state, 1)
