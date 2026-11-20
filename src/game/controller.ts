@@ -15,7 +15,7 @@
  * No DOM and no canvas imports: every effect arrives through a port, which is
  * what makes a whole session testable with fakes.
  */
-import { drawChallenge, type Challenge } from './challenges'
+import { advanceDraw, type Challenge } from './challenges'
 import type { Level } from './generator'
 import { pickHiddenTubes } from './hidden'
 import { MAX_LEVEL, SPARES_LOCK_FROM, clampLevel } from './levels'
@@ -244,8 +244,8 @@ export function createController(ports: ControllerPorts): Controller {
    */
   function openGate(reward: Reward): void {
     if (gate) return
-    const draw = drawChallenge(level, usedDraws)
-    usedDraws = [...usedDraws, draw.index]
+    const { draw, nextUsed } = advanceDraw(level, usedDraws)
+    usedDraws = nextUsed
     gate = { ...draw, reward }
     ports.ui.showChallenge(draw.challenge, reward)
   }

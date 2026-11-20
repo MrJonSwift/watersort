@@ -645,11 +645,17 @@ describe('locked spares (ticket 09)', () => {
     const h = harness([[1, 1], []], {}, locked)
     h.controller.start()
 
+    const prompts: string[] = []
     for (let grown = 1; grown <= 4; grown++) {
       h.controller.tap(1)
-      h.controller.answer(h.challengeShows.at(-1)!.answer)
+      const shown = h.challengeShows.at(-1)!
+      prompts.push(shown.prompt)
+      h.controller.answer(shown.answer)
       expect(h.controller.state.tubes[1].open).toBe(grown)
     }
+    // Four draws on one vial, four different questions (ticket 16).
+    expect(new Set(prompts).size).toBe(4)
+
     // Fully open: the tap is no longer a grow affordance.
     const shows = h.challengeShows.length
     h.controller.tap(1)
