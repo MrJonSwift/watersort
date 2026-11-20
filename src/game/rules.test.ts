@@ -172,9 +172,11 @@ describe('open slots (locked spares)', () => {
   it('knows which tubes can still grow', () => {
     expect(canGrow(spare(0), 4)).toBe(true)
     expect(canGrow(spare(3), 4)).toBe(true)
+    expect(canGrow(spare(2, 1), 4)).toBe(true) // colour inside no longer blocks (ticket 15)
     expect(canGrow(spare(4), 4)).toBe(false)
-    expect(canGrow(spare(2, 1), 4)).toBe(false) // not empty
-    expect(canGrow(tube(), 4)).toBe(false) // fully open
+    expect(canGrow(spare(4, 1, 1), 4)).toBe(false)
+    expect(canGrow(tube(), 4)).toBe(false) // ordinary, fully open
+    expect(canGrow(tube(1, 1), 4)).toBe(false) // ordinary tube never grows
   })
 })
 

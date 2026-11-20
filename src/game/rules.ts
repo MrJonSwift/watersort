@@ -26,9 +26,13 @@ export function openSlots(tube: Tube, capacity: number): number {
   return tube.open ?? capacity
 }
 
-/** Whether this tube can still grow: an empty spare with slots left to open. */
+/**
+ * Whether this spare can still grow: a slot left to open. Since ticket 15 the
+ * tube may already hold colour — the padlock, not the empty rule, is what
+ * protects tap-to-select. Ordinary tubes (`open` undefined) never grow.
+ */
 export function canGrow(tube: Tube, capacity: number): boolean {
-  return tube.colors.length === 0 && openSlots(tube, capacity) < capacity
+  return tube.open !== undefined && openSlots(tube, capacity) < capacity
 }
 
 export function isFull(tube: Tube, capacity: number): boolean {

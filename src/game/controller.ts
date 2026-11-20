@@ -129,6 +129,11 @@ export interface Controller {
   /** First paint: build the DOM tubes, then tell the stage the board exists. */
   start(): void
   tap(index: number): void
+  /**
+   * Tap a sealed slot's padlock. Unlike the glass, this stays an earn affordance
+   * even while the spare holds colour: the padlock is the unlock target.
+   */
+  tapPadlock(index: number): void
   undo(): void
   /** Rebuild the current level; same board, zero moves. */
   restart(): void
@@ -414,6 +419,15 @@ export function createController(ports: ControllerPorts): Controller {
         return
       }
       commit(before, next, describeTap(before, next, index))
+    },
+
+    tapPadlock(index) {
+      if (gateOpen()) return
+      const tube = state.tubes[index]
+      // A padlock exists only on a spare with a slot still to earn. The UI
+      // renders them, but a stale tap (a slot just opened) must not redraw.
+      if (!tube || !canGrow(tube, state.capacity)) return
+      openGate({ kind: 'grow', tube: index })
     },
 
     undo() {

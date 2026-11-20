@@ -47,6 +47,7 @@ let controller: ReturnType<typeof createController>
 
 const ui = createUI(app, {
   onTap: (index) => controller.tap(index),
+  onGrow: (index) => controller.tapPadlock(index),
   onUndo: () => controller.undo(),
   onPrimary: () => controller.primary(),
   onToggleSound: () => controller.toggleSound(),

@@ -830,6 +830,86 @@ describe('optional spares (ticket 14)', () => {
   })
 })
 
+describe('padlocks (ticket 15)', () => {
+  const locked = { level: SPARES_LOCK_FROM, highest: SPARES_LOCK_FROM }
+
+  it('a padlock tap asks to grow that tube and is not a glass tap', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    const eventsBefore = h.events.length
+
+    h.controller.tapPadlock(1)
+    expect(h.rewards).toEqual([{ kind: 'grow', tube: 1 }])
+    expect(h.events).toHaveLength(eventsBefore)
+    expect(h.controller.state.selected).toBeNull()
+    expect(h.sounds).not.toContain('invalid')
+  })
+
+  it('comes back for a second block after pouring into the spare', () => {
+    const h = harness([[1, 1, 1, 1], []], {}, locked)
+    h.controller.start()
+
+    // Earn one slot, then pour one unit into it.
+    h.controller.tapPadlock(1)
+    h.controller.answer(h.challengeShows[0].answer)
+    expect(h.controller.state.tubes[1].open).toBe(1)
+    h.controller.tap(0)
+    h.controller.tap(1)
+    expect(h.controller.state.tubes[1]).toMatchObject({ colors: [1], open: 1 })
+
+    // The padlock, not the empty rule, opens the gate again.
+    h.controller.tapPadlock(1)
+    expect(h.rewards).toEqual([
+      { kind: 'grow', tube: 1 },
+      { kind: 'grow', tube: 1 },
+    ])
+    h.controller.answer(h.challengeShows[1].answer)
+    expect(h.controller.state.tubes[1].open).toBe(2)
+
+    h.controller.tap(0)
+    h.controller.tap(1)
+    expect(h.controller.state.tubes[1].colors).toEqual([1, 1])
+    expect(h.controller.state.moves).toBe(2)
+  })
+
+  it('a padlock tap while the gate is open draws nothing', () => {
+    const h = harness([[1, 1], [], []], {}, locked)
+    h.controller.start()
+    h.controller.tapPadlock(1)
+    for (let i = 0; i < 12; i++) h.controller.tapPadlock(2)
+    expect(h.challengeShows).toHaveLength(1)
+    expect(h.controller.state.tubes[2].open).toBe(0)
+  })
+
+  it('the glass of a coloured partly-open spare still selects', () => {
+    const h = harness([[1, 1], []], {}, locked)
+    h.controller.start()
+    h.controller.tapPadlock(1)
+    h.controller.answer(h.challengeShows[0].answer)
+    h.controller.tap(0)
+    h.controller.tap(1) // pour colour into the spare
+    expect(h.controller.state.tubes[1].colors).toEqual([1])
+
+    const shows = h.challengeShows.length
+    h.controller.tap(1) // empty-handed glass tap: selection, not the gate
+    expect(h.controller.state.selected).toBe(1)
+    expect(h.challengeShows).toHaveLength(shows)
+  })
+
+  it('a fully open tube has no padlock left to tap', () => {
+    const h = harness([[1, 1], []], {}, locked)
+    h.controller.start()
+    for (let grown = 1; grown <= 4; grown++) {
+      h.controller.tapPadlock(1)
+      h.controller.answer(h.challengeShows.at(-1)!.answer)
+    }
+    expect(h.controller.state.tubes[1].open).toBe(4)
+    const shows = h.challengeShows.length
+    h.controller.tapPadlock(1)
+    expect(h.challengeShows).toHaveLength(shows)
+  })
+})
+
 describe('feedback', () => {
   it('completes a tube with a chime, but does not call it a win', () => {
     const h = harness([

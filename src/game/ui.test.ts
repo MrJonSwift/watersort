@@ -5,7 +5,17 @@ import { createGame } from './state'
 import { DEFAULT_SETTINGS } from './settings'
 import type { GameState } from './types'
 import { MAX_LEVEL } from './levels'
-import { createUI, bannerCopy, rewardNote, tubeAria, tubeColumns, undoAria, undoCopy, type UIHandlers } from './ui'
+import {
+  createUI,
+  bannerCopy,
+  PADLOCK_ARIA,
+  rewardNote,
+  tubeAria,
+  tubeColumns,
+  undoAria,
+  undoCopy,
+  type UIHandlers,
+} from './ui'
 
 describe('bannerCopy', () => {
   it('reports the moves for a mid-run win', () => {
@@ -104,6 +114,79 @@ describe('tubeColumns', () => {
   })
 })
 
+describe('padlocks (ticket 15)', () => {
+  function harnessWithSpare(open: number, colors: number[] = []) {
+    document.body.replaceChildren()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const handlers: UIHandlers & { taps: number[]; grows: number[] } = {
+      onTap: (index) => handlers.taps.push(index),
+      onGrow: (index) => handlers.grows.push(index),
+      onPrimary: vi.fn(),
+      onUndo: vi.fn(),
+      onToggleSound: vi.fn(),
+      onTogglePourFx: vi.fn(),
+      onAnswer: vi.fn(),
+      onDismiss: vi.fn(),
+      taps: [],
+      grows: [],
+    }
+    const ui = createUI(root, handlers)
+    const state = createGame([[1, 1], [2], [...colors]])
+    state.tubes[2] = { colors: [...colors], open }
+    ui.update(state, { ...DEFAULT_SETTINGS }, {
+      level: 23,
+      maxLevel: MAX_LEVEL,
+      primary: 'restart',
+      undoCredits: 5,
+    })
+    return { ui, handlers, state, tubes: document.querySelectorAll<HTMLElement>('.tube') }
+  }
+
+  it('shows one labelled padlock per sealed slot, over the top bands', () => {
+    const h = harnessWithSpare(2)
+    const locks = h.tubes[2].querySelectorAll<HTMLButtonElement>('.padlock')
+    expect(locks).toHaveLength(4)
+    expect(Array.from(locks).map((lock) => lock.hidden)).toEqual([false, false, true, true])
+    expect(Array.from(locks).slice(0, 2).map((lock) => lock.style.top)).toEqual(['12.5%', '37.5%'])
+    expect(locks[0].getAttribute('aria-label')).toBe(PADLOCK_ARIA)
+    expect(locks[0].querySelector('svg')).not.toBeNull()
+    // Ordinary tubes never grow, so they carry no visible padlock.
+    expect(h.tubes[0].querySelectorAll('.padlock:not([hidden])')).toHaveLength(0)
+  })
+
+  it('tracks the count as slots open, even while the spare holds colour', () => {
+    const h = harnessWithSpare(3, [1])
+    expect(h.tubes[2].querySelectorAll('.padlock:not([hidden])')).toHaveLength(1)
+    expect(h.tubes[2].getAttribute('aria-label')).toBe(
+      'Tube 3, 3 of 4 slots open, 1 filled',
+    )
+    h.ui.update(
+      { ...h.state, tubes: h.state.tubes.map((t, i) => (i === 2 ? { colors: [1], open: 4 } : t)) },
+      { ...DEFAULT_SETTINGS },
+      { level: 23, maxLevel: MAX_LEVEL, primary: 'restart', undoCredits: 5 },
+    )
+    expect(h.tubes[2].querySelectorAll('.padlock:not([hidden])')).toHaveLength(0)
+  })
+
+  it('a padlock tap grows, never pours through the glass', () => {
+    const h = harnessWithSpare(1, [1])
+    h.tubes[2].querySelector<HTMLButtonElement>('.padlock:not([hidden])')!.click()
+    expect(h.handlers.grows).toEqual([2])
+    expect(h.handlers.taps).toEqual([])
+  })
+
+  it('keeps the glass keyboard-reachable without hijacking padlock keys', () => {
+    const h = harnessWithSpare(0)
+    h.tubes[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(h.handlers.taps).toEqual([2])
+    h.tubes[2]
+      .querySelector<HTMLElement>('.padlock')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(h.handlers.taps).toEqual([2]) // the padlock owns its own keys
+  })
+})
+
 describe('the earn gate dialog', () => {
   const challenge = CHALLENGES[0]
 
@@ -113,6 +196,7 @@ describe('the earn gate dialog', () => {
     document.body.append(root)
     const handlers: UIHandlers & { answers: number[]; dismissals: number } = {
       onTap: vi.fn(),
+      onGrow: vi.fn(),
       onPrimary: vi.fn(),
       onUndo: vi.fn(),
       onToggleSound: vi.fn(),

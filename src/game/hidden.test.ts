@@ -75,6 +75,8 @@ describe('per-level pick (integration pin)', () => {
     // Same level, same board, same pick: a re-roll of either the generator or
     // the pick shows up here and must be a deliberate content decision.
     expect(pickHiddenTubes(15, realTubes(15))).toEqual([7]) // re-pinned in ticket 13
-    expect(pickHiddenTubes(20, realTubes(20))).toEqual([1, 9])
+    // Re-pinned in ticket 15: lowering level 20's scramble to 8 re-rolled its
+    // board, so the seeded pick follows the new tube contents.
+    expect(pickHiddenTubes(20, realTubes(20))).toEqual([2, 0])
   })
 })

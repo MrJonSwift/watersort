@@ -240,6 +240,41 @@ body {
 }
 
 /*
+ * One padlock per sealed slot (ticket 15): the unlock target, never the pour
+ * target. Quiet chrome above the glass veil, finger-sized, no motion of its
+ * own — the existing gate rules cover the reduced-motion case.
+ */
+.padlock {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(238, 242, 255, 0.58);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.padlock[hidden] {
+  display: none;
+}
+
+.padlock svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.padlock:active {
+  color: var(--text);
+}
+
+/*
  * Screens shorter than a common phone step the tube height down instead of
  * using a viewport-height `calc()`: 8.25rem still fits the two-row board and
  * the controls on a 568px-tall screen, and leaves more empty glass than the

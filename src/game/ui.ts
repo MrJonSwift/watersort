@@ -13,6 +13,8 @@ import type { GameState, Tube } from './types'
 
 export interface UIHandlers {
   onTap(index: number): void
+  /** The player tapped a sealed slot's padlock: open the earn gate for it. */
+  onGrow(index: number): void
   onPrimary(): void
   onUndo(): void
   onToggleSound(): void
@@ -44,6 +46,20 @@ const PRIMARY_COPY: Record<PrimaryAction, string> = {
 function movesCopy(count: number): string {
   return `${count} ${count === 1 ? 'move' : 'moves'}`
 }
+
+/**
+ * One small inline padlock per sealed slot (ticket 15). No emoji, no asset:
+ * the SVG inherits the button's muted chrome colour and sits above the glass
+ * veil, inside the tube so it rides along with the pour pose.
+ */
+const PADLOCK_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+  '<path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+  '<rect x="5" y="9.5" width="14" height="11.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.2"/>' +
+  '<circle cx="12" cy="15" r="1.4" fill="currentColor"/>' +
+  '</svg>'
+
+export const PADLOCK_ARIA = 'Locked slot — answer a question to open one'
 
 /** Undo button text: the remaining budget, visible at a glance. */
 export function undoCopy(credits: number): string {
@@ -105,7 +121,7 @@ export function tubeColumns(count: number): number {
  * Place the tubes on the grid, pushing the first tube of a short last row
  * sideways so that row is centred as closely as whole columns allow.
  */
-function placeTubes(tubes: HTMLButtonElement[], columns: number): void {
+function placeTubes(tubes: HTMLElement[], columns: number): void {
   const count = tubes.length
   const rows = Math.ceil(count / columns)
   const lastRow = count - (rows - 1) * columns
@@ -247,21 +263,39 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
 
   root.append(hud, board, controls, toggles, gate)
 
-  function ensureTubes(count: number): HTMLButtonElement[] {
-    const existing = board.querySelectorAll<HTMLButtonElement>('.tube')
+  /*
+   * Padlock buttons per tube. A tube is a `div role="button"` rather than a
+   * native button so it can own real buttons without nesting invalid HTML;
+   * Enter/Space keeps the glass keyboard-reachable, and the padlocks keep
+   * their own native button keys.
+   */
+  const padlocks: HTMLButtonElement[][] = []
+
+  function ensureTubes(count: number): HTMLElement[] {
+    const existing = board.querySelectorAll<HTMLElement>('.tube')
     if (existing.length === count) return Array.from(existing)
 
     board.replaceChildren()
-    const tubes: HTMLButtonElement[] = []
+    padlocks.length = 0
+    const tubes: HTMLElement[] = []
     for (let i = 0; i < count; i++) {
-      const tube = document.createElement('button')
-      tube.type = 'button'
+      const tube = document.createElement('div')
       tube.className = 'tube'
       tube.dataset.index = String(i)
+      tube.setAttribute('role', 'button')
+      tube.tabIndex = 0
       const glass = document.createElement('span')
       glass.className = 'glass'
       tube.append(glass)
       tube.addEventListener('click', () => handlers.onTap(i))
+      tube.addEventListener('keydown', (event) => {
+        // A padlock inside owns its own keys; only the glass responds here.
+        if (event.target !== tube) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          handlers.onTap(i)
+        }
+      })
       board.append(tube)
       tubes.push(tube)
     }
@@ -269,6 +303,30 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
     // tube-count change (level 3 to level 4 is 5 to 6 tubes).
     board.append(banner)
     return tubes
+  }
+
+  /** Build one padlock per slot, once per tube/capacity, then just reveal the
+   * sealed ones. Keeping the buttons stable preserves focus across a pour. */
+  function ensurePadlocks(index: number, tube: HTMLElement, capacity: number): HTMLButtonElement[] {
+    let locks = padlocks[index]
+    if (!locks || locks.length !== capacity) {
+      locks = Array.from({ length: capacity }, () => {
+        const lock = document.createElement('button')
+        lock.type = 'button'
+        lock.className = 'padlock'
+        lock.innerHTML = PADLOCK_SVG
+        lock.setAttribute('aria-label', PADLOCK_ARIA)
+        lock.addEventListener('click', (event) => {
+          // The padlock is the unlock target, never the glass pour target.
+          event.stopPropagation()
+          handlers.onGrow(index)
+        })
+        return lock
+      })
+      tube.append(...locks)
+      padlocks[index] = locks
+    }
+    return locks
   }
 
   return {
@@ -294,6 +352,15 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
         tubeEl.classList.toggle('is-selected', state.selected === i)
         tubeEl.classList.toggle('is-complete', isComplete(tube, state.capacity))
         tubeEl.classList.toggle('is-sealed', open === 0)
+
+        // Sealed slots are the top `capacity - open` bands of the glass, so
+        // a slot's centre is a fixed fraction of the tube height. No canvas
+        // work and no DOM measurement: CSS percentages follow the tube.
+        const sealed = state.capacity - open
+        ensurePadlocks(i, tubeEl, state.capacity).forEach((lock, slot) => {
+          lock.hidden = slot >= sealed
+          lock.style.top = `${((slot + 0.5) / state.capacity) * 100}%`
+        })
       })
 
       banner.hidden = !state.won

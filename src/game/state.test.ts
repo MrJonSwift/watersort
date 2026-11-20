@@ -75,11 +75,19 @@ describe('growBlock', () => {
     expect(growBlock(state, 0)).toBe(state) // nothing left to grow
   })
 
-  it('refuses a non-empty tube, a fully open tube or a missing index', () => {
+  it('refuses an ordinary tube, a fully open tube or a missing index', () => {
     const base = createGame([[1], []])
-    expect(growBlock(base, 0)).toBe(base) // holds colours
+    expect(growBlock(base, 0)).toBe(base) // ordinary tube holds colours: no `open`
     expect(growBlock(base, 1)).toBe(base) // fully open, nothing to earn
     expect(growBlock(base, 9)).toBe(base) // no such tube
+  })
+
+  it('grows above colour a spare already holds (ticket 15)', () => {
+    const game = createGame([[1], []])
+    const state: GameState = { ...game, tubes: [game.tubes[0], { colors: [1], open: 1 }] }
+    const next = growBlock(state, 1)
+    expect(next.tubes[1]).toEqual({ colors: [1], open: 2 })
+    expect(state.tubes[1].open).toBe(1) // immutable
   })
 
   it('is the seam between a sealed board and a playable pour', () => {
@@ -92,6 +100,11 @@ describe('growBlock', () => {
     expect(poured.tubes[1].colors).toEqual([1, 1])
     expect(poured.tubes[1].open).toBe(2)
     expect(pour(poured, 0, 1)).toBe(poured) // full at its open count again
+
+    // Ticket 15: the player can come back for another block after the pour.
+    const grownAgain = growBlock(poured, 1)
+    expect(grownAgain.tubes[1].open).toBe(3)
+    expect(pour(grownAgain, 0, 1).tubes[1].colors).toEqual([1, 1, 1])
   })
 })
 

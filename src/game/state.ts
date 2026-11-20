@@ -50,8 +50,9 @@ export function sealSpares(state: GameState, solution: readonly Move[]): GameSta
 
 /**
  * Grow a spare by one open slot — the reward a correct gate answer grants.
- * Pure: only an empty tube with room to grow changes, so a partly filled
- * spare must be emptied before it can grow again (grow first, then pour).
+ * Pure: only a spare with room to grow changes. Since ticket 15 a spare may
+ * keep growing while it holds colour; the new slot opens above what is poured.
+ * Ordinary and fully open tubes are untouched.
  */
 export function growBlock(state: GameState, index: number): GameState {
   const tube = state.tubes[index]
