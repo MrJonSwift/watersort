@@ -42,14 +42,10 @@ export const LEVELS: readonly LevelConfig[] = [
   { colors: 7, emptyTubes: 2, scramble: 18 },
   { colors: 7, emptyTubes: 2, scramble: 20 },
   { colors: 7, emptyTubes: 2, scramble: 22 },
-  /* Ticket 15: the 8-colour tier opens at 8–11 so level 23's seeded board
-   * leaves its spare unused and can carry a padlock. A deliberate re-roll,
-   * signed off by the owner and pinned in generator.test.ts; the rest of the
-   * tier keeps climbing from 24 upwards. */
-  { colors: 8, emptyTubes: 2, scramble: 8 },
-  { colors: 8, emptyTubes: 2, scramble: 9 },
-  { colors: 8, emptyTubes: 2, scramble: 10 },
-  { colors: 8, emptyTubes: 2, scramble: 11 },
+  { colors: 8, emptyTubes: 2, scramble: 16 },
+  { colors: 8, emptyTubes: 2, scramble: 18 },
+  { colors: 8, emptyTubes: 2, scramble: 20 },
+  { colors: 8, emptyTubes: 2, scramble: 22 },
   { colors: 8, emptyTubes: 2, scramble: 24 },
   { colors: 8, emptyTubes: 2, scramble: 26 },
   { colors: 8, emptyTubes: 2, scramble: 28 },
@@ -66,15 +62,15 @@ export const MAX_LEVEL = LEVELS.length
  * an empty the level's validated solution never pours into is locked: the
  * spare is an optional escape hatch, never a toll on the solution path. An
  * empty the solution uses stays fully open, and a level whose solution uses
- * every empty shows no lock at all. Tubes holding colours are never sealed.
- * Levels below this number are untouched. Moving it is a content decision
- * that needs a deliberate ticket.
+ * every empty shows no lock at all — on the shipped 20–30 curve that is every
+ * level, recorded deliberately rather than re-rolling boards. Tubes holding
+ * colours are never sealed. Levels below this number are untouched. Moving it
+ * is a content decision that needs a deliberate ticket.
  *
- * Ticket 15 lowered the first four scrambles of the 8-colour tier to 8–11 so
- * level 23's validated solution leaves a spare unused: it is the only
- * (level, scramble) pair in 20–30 whose seeded board carries a lock. That
- * re-rolled boards 20–23 — an owner-signed-off content change, pinned by
- * snapshots. Other levels on the curve show no padlock.
+ * Ticket 15 adds the padlock affordance but leaves this curve alone: no
+ * shipped level has a lock, so it waits for ticket 17's new boards. The owner
+ * chose that over a re-roll after seeing the cost (20–23 would have had to
+ * become easier than level 19).
  */
 export const SPARES_LOCK_FROM = 20
 

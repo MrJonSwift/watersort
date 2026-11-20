@@ -216,36 +216,16 @@ describe('generateLevel', () => {
     expect(isWon(replaySealed(level))).toBe(true)
   })
 
-  it('pins the board re-rolled to restore a padlock (ticket 15)', () => {
-    // Owner-signed-off content change: level 23's scramble moved 22 → 11,
-    // the only (level, scramble) pair in 20–30 that leaves a solution-unused
-    // empty under the seeded attempt selection. Levels 20–22 stepped down to
-    // 8/9/10 to keep the tier strictly increasing. Boards 1–4 above are
-    // untouched; these four are the re-roll and must not drift again.
-    const reRolled: Array<[number, string]> = [
-      [20, '[[0,0,0],[1,1,1],[2,2,4],[3,3,3,0],[4,4,4,7],[5,5],[6,6,6],[7,7,7,6],[3,1],[2,2,5,5]]'],
-      [21, '[[0,0],[1,1,1],[2,2,3,3],[3,3,5,5],[4,4,4],[5],[6,0,0],[7,7,2,2],[4,6,6,6],[1,7,7,5]]'],
-      [22, '[[0,0,0],[1,3],[2,2],[3,3,3,2],[4,4,6,2],[5,4],[6,6,6,7],[7,7,7,4],[0,5,5,5],[1,1,1]]'],
-      [23, '[[0,0,0,4],[2,2],[2,2],[3,5,5,7],[4,1,1,1],[5,5,0,4],[6,6,6,1],[7,7,7,4],[],[3,3,3,6]]'],
-    ]
-    for (const [level, board] of reRolled) {
-      expect(JSON.stringify(generateLevel(level).board), `level ${level}`).toBe(board)
-    }
-  })
-
-  it('puts a padlock on level 23 only', () => {
-    // The shipped locked tier: level 23's solution never pours into empty 8,
-    // so that spare stays sealed and carries one padlock per slot. Every other
-    // level either has no empty or uses all of them. Recorded so a future
-    // table or generator edit cannot silently move or remove the lock.
-    const locked: number[] = []
+  it('leaves no shipped locked-tier level needing a question to be won', () => {
+    // Probe of levels 20–30 (ticket 14): every empty on those boards is a
+    // solution destination, so solution-aware sealing leaves no padlock at
+    // all. Ticket 15 probed a scramble re-roll again but the owner declined
+    // the cost (four levels would become easier than level 19); this curve
+    // stands. Recorded so a board re-roll — a content decision — shows up.
     for (let level = SPARES_LOCK_FROM; level <= MAX_LEVEL; level++) {
       const { board, solution } = generateLevel(level)
       const sealed = sealSpares(createGame(board), solution)
-      sealed.tubes.forEach((tube, index) => {
-        if (tube.open === 0) locked.push(level * 100 + index)
-      })
+      expect(sealed.tubes.some((tube) => tube.open === 0), `level ${level}`).toBe(false)
     }
-    expect(locked).toEqual([2308])
   })
 })
