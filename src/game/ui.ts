@@ -109,12 +109,15 @@ export function bannerCopy(level: number, maxLevel: number, moves: number): stri
  * How many grid columns the board uses for `count` tubes.
  *
  * Up to five tubes sit in one row. Above that the board splits into two rows
- * with a balanced split: 3+3, 4+3, 4+4, 5+4, 5+5. Fixed columns keep the row
- * split independent of viewport width, so tubes never change width.
+ * with a balanced split: 3+3, 4+3, 4+4, 5+4, 5+5. Boards of more than ten
+ * tubes (11 in the 9-colour tier, 12 in the 10-colour tier) use seven columns
+ * — 7+4 and 7+5 — with a step down in tube width so seven fit at 360px.
+ * Fixed columns keep the row split independent of viewport width.
  */
 export function tubeColumns(count: number): number {
   if (count <= 5) return Math.max(1, count)
-  return Math.min(5, Math.ceil(count / 2))
+  if (count <= 10) return Math.min(5, Math.ceil(count / 2))
+  return 7
 }
 
 /**
@@ -334,6 +337,9 @@ export function createUI(root: HTMLElement, handlers: UIHandlers): UI {
       const tubes = ensureTubes(state.tubes.length)
       const columns = tubeColumns(state.tubes.length)
       board.style.setProperty('--cols', String(columns))
+      // CSS uses this to step the tube width, gap and side padding down for
+      // the seven-column tiers; the row split itself stays in `placeTubes`.
+      board.classList.toggle('is-wide', columns === 7)
       placeTubes(tubes, columns)
 
       levelLine.textContent = `Level ${view.level}`

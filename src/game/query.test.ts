@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { parseLevelJump } from './query'
+import { MAX_LEVEL } from './levels'
 
-const MAX = 30
+// The jump follows the level table, so extending it to 40 needs no parser edit.
+const MAX = MAX_LEVEL
 
 describe('parseLevelJump', () => {
   it('reads a whole level number', () => {
     expect(parseLevelJump('?level=15', MAX)).toBe(15)
     expect(parseLevelJump('?level=1', MAX)).toBe(1)
     expect(parseLevelJump('?level=30', MAX)).toBe(30)
+    expect(parseLevelJump('?level=40', MAX)).toBe(40)
   })
 
   it('ignores a missing parameter', () => {
@@ -31,7 +34,7 @@ describe('parseLevelJump', () => {
 
   it('clamps out-of-range numbers to the real board range', () => {
     expect(parseLevelJump('?level=0', MAX)).toBe(1)
-    expect(parseLevelJump('?level=999', MAX)).toBe(30)
+    expect(parseLevelJump('?level=999', MAX)).toBe(MAX)
     expect(parseLevelJump('?level=007', MAX)).toBe(7)
   })
 

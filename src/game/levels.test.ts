@@ -14,6 +14,8 @@ const CURVE = [
   '7/2/14', '7/2/16', '7/2/18', '7/2/20', '7/2/22',
   '8/2/16', '8/2/18', '8/2/20', '8/2/22', '8/2/24', '8/2/26', '8/2/28',
   '8/2/30', '8/2/32', '8/2/34', '8/2/36',
+  '9/2/22', '9/2/26', '9/2/30', '9/2/34', '9/2/38',
+  '10/2/24', '10/2/28', '10/2/32', '10/2/36', '10/2/40',
 ]
 
 /** The level that first adds a colour, and the tubes it starts with. */
@@ -24,12 +26,15 @@ const TIERS: Array<[level: number, tubes: number]> = [
   [11, 8],
   [15, 9],
   [20, 10],
+  [31, 11],
+  [36, 12],
 ]
 
 describe('levels', () => {
-  it('ships the validated 30-level curve', () => {
+  it('ships the validated 40-level curve', () => {
     expect(LEVELS.map((l) => `${l.colors}/${l.emptyTubes}/${l.scramble}`)).toEqual(CURVE)
     expect(MAX_LEVEL).toBe(LEVELS.length)
+    expect(MAX_LEVEL).toBe(40)
   })
 
   it('never removes a spare tube and never jumps backwards in colour', () => {
