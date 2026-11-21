@@ -17,6 +17,10 @@ describe('hiddenTubeCount', () => {
     expect(hiddenTubeCount(HIDDEN_FROM + 4)).toBe(1)
     expect(hiddenTubeCount(20)).toBe(2)
     expect(hiddenTubeCount(30)).toBe(2)
+    // Ticket 17's tiers keep two concealed tubes: the extra colours and the
+    // wider board are the difficulty step, not a change to concealment.
+    expect(hiddenTubeCount(31)).toBe(2)
+    expect(hiddenTubeCount(40)).toBe(2)
   })
 
   it('never asks a sub-1 level for hidden tubes', () => {
@@ -76,5 +80,9 @@ describe('per-level pick (integration pin)', () => {
     // the pick shows up here and must be a deliberate content decision.
     expect(pickHiddenTubes(15, realTubes(15))).toEqual([7]) // re-pinned in ticket 13
     expect(pickHiddenTubes(20, realTubes(20))).toEqual([1, 9])
+    // New in ticket 17: the 11- and 12-tube boards still pick two, and the
+    // hash keeps them off the spares and spread across the row.
+    expect(pickHiddenTubes(31, realTubes(31))).toEqual([9, 3])
+    expect(pickHiddenTubes(40, realTubes(40))).toEqual([9, 4])
   })
 })

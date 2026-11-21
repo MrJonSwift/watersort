@@ -15,12 +15,15 @@ export interface LevelConfig {
 }
 
 /**
- * The 30-level curve: 3 colours at level 1 up to 8 colours and 36 reverse
- * moves at level 30. Every level keeps two spare tubes; the ramp comes from
+ * The 40-level curve: 3 colours at level 1 up to 10 colours and 40 reverse
+ * moves at level 40. Every level keeps two spare tubes; the ramp comes from
  * colours and scramble, never from taking a spare away.
  *
  * Each new colour tier starts below the previous tier's last scramble, so the
- * extra colour is the step rather than the colour plus a scramble jump.
+ * extra colour is the step rather than the colour plus a scramble jump. The
+ * 9-colour tier (31–35) and 10-colour tier (36–40) each add five levels; their
+ * boards use 11 and 12 tubes, which is why the board lays out seven per row
+ * above ten tubes (ticket 17).
  */
 export const LEVELS: readonly LevelConfig[] = [
   { colors: 3, emptyTubes: 2, scramble: 6 },
@@ -53,6 +56,16 @@ export const LEVELS: readonly LevelConfig[] = [
   { colors: 8, emptyTubes: 2, scramble: 32 },
   { colors: 8, emptyTubes: 2, scramble: 34 },
   { colors: 8, emptyTubes: 2, scramble: 36 },
+  { colors: 9, emptyTubes: 2, scramble: 22 },
+  { colors: 9, emptyTubes: 2, scramble: 26 },
+  { colors: 9, emptyTubes: 2, scramble: 30 },
+  { colors: 9, emptyTubes: 2, scramble: 34 },
+  { colors: 9, emptyTubes: 2, scramble: 38 },
+  { colors: 10, emptyTubes: 2, scramble: 24 },
+  { colors: 10, emptyTubes: 2, scramble: 28 },
+  { colors: 10, emptyTubes: 2, scramble: 32 },
+  { colors: 10, emptyTubes: 2, scramble: 36 },
+  { colors: 10, emptyTubes: 2, scramble: 40 },
 ]
 
 export const MAX_LEVEL = LEVELS.length
@@ -67,10 +80,11 @@ export const MAX_LEVEL = LEVELS.length
  * colours are never sealed. Levels below this number are untouched. Moving it
  * is a content decision that needs a deliberate ticket.
  *
- * Ticket 15 adds the padlock affordance but leaves this curve alone: no
- * shipped level has a lock, so it waits for ticket 17's new boards. The owner
- * chose that over a re-roll after seeing the cost (20–23 would have had to
- * become easier than level 19).
+ * Ticket 15 adds the padlock affordance but leaves the 20–30 curve alone; the
+ * owner declined a re-roll after seeing the cost (20–23 would have had to
+ * become easier than level 19). Ticket 17's new boards are the first that may
+ * show a lock: whichever of their unused empties the validated solution leaves
+ * alone is sealed, and that outcome is pinned in `generator.test.ts`.
  */
 export const SPARES_LOCK_FROM = 20
 
@@ -84,9 +98,9 @@ export const SPARES_LOCK_FROM = 20
 export const HIDDEN_FROM = 15
 
 /**
- * How many tubes hide their blocks on a level. One on the 7-colour tier;
- * two from the final tier, where the concealment stacks on the locked
- * spares. Always zero below `HIDDEN_FROM`.
+ * How many tubes hide their blocks on a level. One from `HIDDEN_FROM` to 19;
+ * two from level 20 on (the 8-, 9- and 10-colour tiers), where concealment
+ * stacks on the sealed spares. Always zero below `HIDDEN_FROM`.
  */
 export function hiddenTubeCount(level: number): number {
   if (level < HIDDEN_FROM) return 0

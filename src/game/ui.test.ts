@@ -112,6 +112,49 @@ describe('tubeColumns', () => {
       expect(tubeColumns(count)).toBe(columns)
     }
   })
+
+  it('uses seven columns for the 11- and 12-tube tiers (ticket 17)', () => {
+    for (const count of [11, 12, 13, 14]) {
+      expect(tubeColumns(count)).toBe(7)
+    }
+  })
+
+  it('marks the board wide at 12 tubes and centres the short 7 + 5 row', () => {
+    document.body.replaceChildren()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const handlers: UIHandlers = {
+      onTap: vi.fn(),
+      onGrow: vi.fn(),
+      onPrimary: vi.fn(),
+      onUndo: vi.fn(),
+      onToggleSound: vi.fn(),
+      onTogglePourFx: vi.fn(),
+      onAnswer: vi.fn(),
+      onDismiss: vi.fn(),
+    }
+    const ui = createUI(root, handlers)
+    const view = {
+      level: 40,
+      maxLevel: MAX_LEVEL,
+      primary: 'restart' as const,
+      undoCredits: 5,
+    }
+
+    const wide = createGame(Array.from({ length: 12 }, (_, i) => [i % 10]))
+    ui.update(wide, { ...DEFAULT_SETTINGS }, view)
+    const board = root.querySelector<HTMLElement>('.board')!
+    expect(board.style.getPropertyValue('--cols')).toBe('7')
+    expect(board.classList.contains('is-wide')).toBe(true)
+    const tubes = board.querySelectorAll<HTMLElement>('.tube')
+    expect(tubes).toHaveLength(12)
+    expect(tubes[7].style.gridColumnStart).toBe('2') // 5-tube row centred under 7
+
+    const narrow = createGame(Array.from({ length: 10 }, (_, i) => [i % 8]))
+    ui.update(narrow, { ...DEFAULT_SETTINGS }, view)
+    expect(board.style.getPropertyValue('--cols')).toBe('5')
+    expect(board.classList.contains('is-wide')).toBe(false)
+  })
 })
 
 describe('padlocks (ticket 15)', () => {

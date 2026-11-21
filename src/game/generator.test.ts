@@ -221,7 +221,10 @@ describe('generateLevel', () => {
     // solution destination, so solution-aware sealing leaves no padlock at
     // all. Ticket 15 probed a scramble re-roll again but the owner declined
     // the cost (four levels would become easier than level 19); this curve
-    // stands. Recorded so a board re-roll — a content decision — shows up.
+    // stands. Ticket 17's probe of 31–40 found the same: 31 has no empty and
+    // each of 32–40 has exactly one, used by the solution, so no padlock
+    // appears on any shipped board even with ten colours. Recorded so a board
+    // re-roll — a content decision — shows up.
     for (let level = SPARES_LOCK_FROM; level <= MAX_LEVEL; level++) {
       const { board, solution } = generateLevel(level)
       const sealed = sealSpares(createGame(board), solution)
