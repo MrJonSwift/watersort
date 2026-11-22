@@ -4,7 +4,15 @@ import {
   generateLevel,
   type Level,
 } from './generator'
-import { LEVELS, MAX_LEVEL, SPARES_LOCK_FROM, levelConfig, type LevelConfig } from './levels'
+import {
+  CLIMB_FROM,
+  LATE_BOARD_MIN_MULTI,
+  LEVELS,
+  MAX_LEVEL,
+  SPARES_LOCK_FROM,
+  levelConfig,
+  type LevelConfig,
+} from './levels'
 import { DEFAULT_CAPACITY, isComplete, isWon } from './rules'
 import { createGame, sealSpares, tap } from './state'
 import type { GameState } from './types'
@@ -20,6 +28,17 @@ function runCount(board: readonly (readonly number[])[]): number {
     }
   }
   return runs
+}
+
+/** Compact identity for a board: a re-roll of any late level shows up here. */
+function boardHash(board: readonly (readonly number[])[]): number {
+  const text = JSON.stringify(board)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
 }
 
 function replayMoves(start: GameState, level: Level): GameState {
@@ -244,6 +263,57 @@ describe('generateLevel', () => {
     for (let level = 1; level <= MAX_LEVEL; level++) {
       const config = levelConfig(level)
       expect(generateLevel(level).board).toHaveLength(config.colors + config.emptyTubes)
+    }
+  })
+
+  it('shapes every climb board for the optional lock and twelve hidden vials', () => {
+    // Ticket 20's seed-selection rule, gated to 51+ so 1–50 never see it: a
+    // gate-passing board is accepted only with a coloured, solution-unused
+    // spare at index 12 or 13 and at least twelve multi-unit tubes.
+    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+      const { board, solution } = generateLevel(level)
+      expect(board, `level ${level}`).toHaveLength(14)
+
+      const used = new Set(solution.map((move) => move.to))
+      const spares = [board.length - 2, board.length - 1]
+      expect(
+        spares.some((index) => board[index].length >= 2 && !used.has(index)),
+        `level ${level} lockable spare`,
+      ).toBe(true)
+
+      const multi = board.filter((tube) => tube.length >= 2).length
+      expect(multi, `level ${level} multi-unit tubes`).toBeGreaterThanOrEqual(
+        LATE_BOARD_MIN_MULTI,
+      )
+
+      // The plain empty is always a solution destination, so it can never be
+      // mistaken for the padlock target. Only a full spare is lockable.
+      board.forEach((tube, index) => {
+        if (tube.length === 0) expect(used.has(index), `level ${level} empty ${index}`).toBe(true)
+      })
+    }
+  })
+
+  it('pins the boards of the climb', () => {
+    // A table or generator change that re-rolls a played late board is a
+    // content decision, so the whole 51–100 range is fingerprinted here.
+    const fingerprints = [
+      939647397, 1521943897, 1371435723, 1473887523, 1536026407,
+      2047833879, 2607242405, 1568599109, 2906388333, 719278825,
+      2200720833, 4150724187, 712135067, 1642723397, 751712713,
+      3248196649, 3373488153, 2816441011, 665171589, 1916113857,
+      3935649395, 2109881329, 1723013447, 614620663, 169528423,
+      2493276711, 2952658861, 3463480869, 3767841425, 3004309343,
+      2956304051, 3870795353, 2332226747, 1119897469, 2722364057,
+      684001051, 3141846701, 3134865465, 2200118745, 1064417121,
+      517320057, 2041051645, 1428799705, 840055599, 3145047475,
+      1306342975, 2668336381, 313949121, 1370988231, 3058227765,
+    ]
+    expect(fingerprints).toHaveLength(MAX_LEVEL - CLIMB_FROM + 1)
+    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+      expect(boardHash(generateLevel(level).board), `level ${level}`).toBe(
+        fingerprints[level - CLIMB_FROM],
+      )
     }
   })
 })

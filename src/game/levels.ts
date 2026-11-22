@@ -75,9 +75,13 @@ export const LEVELS: readonly LevelConfig[] = [
  * one-line change here rather than a new row in a table. A procedural ramp is
  * bounded by the phone (see `MAX_TWO_ROW_TUBES`), so "infinite" means unbounded
  * in *level number*, not in board size — past the colour ceiling the ramp
- * cycles its scramble rather than growing the board further.
+ * climbs through what the player can see rather than a bigger board.
+ *
+ * Ticket 21 raised this from 50 to 100. Levels 51–100 are the back-loaded
+ * climb: 12 colours, 14 tubes and a fixed gate-capped scramble, with the number
+ * of concealed vials rising 3 → 12.
  */
-export const MAX_LEVEL = 50
+export const MAX_LEVEL = 100
 
 /** The first derived level. Everything up to 40 is the validated hand-tuned curve. */
 export const EXPERT_FROM = 41
@@ -99,6 +103,30 @@ const EXPERT_SCRAMBLE_CYCLE = 5
 
 /** Every derived level keeps the same two generated spares. */
 const EXPERT_EMPTY_TUBES = 2
+
+/**
+ * First level of the back-loaded climb (ticket 21). Everything through 50 keeps
+ * its shipped config, board, solution and hidden pick; both the generator's
+ * shape rule and the concealment schedule below start here. Gating on the level
+ * number is what makes 1–50 byte-for-byte frozen.
+ */
+export const CLIMB_FROM = 51
+
+/**
+ * Scramble ceiling for the climb. At 12 colours the unchanged quality gate's
+ * run-count threshold tops out around here: ticket 20 probed 54 passing all 50
+ * levels, 78 passing only 11 and 82+ passing none inside the search budget.
+ * Scramble therefore holds at the level-50 value and concealment is the ramp —
+ * the gate is never weakened to let a longer scramble through.
+ */
+export const CLIMB_SCRAMBLE = 54
+
+/**
+ * Minimum number of tubes holding at least two units on a late board (ticket
+ * 20). It gives level 100's twelve concealed vials somewhere to hide, and the
+ * solution-unused spare is one of them so ticket 22 can padlock it.
+ */
+export const LATE_BOARD_MIN_MULTI = 12
 
 /**
  * The most tubes that still fit in two rows of seven on a 360px phone (ticket
@@ -147,14 +175,42 @@ export const HIDDEN_FROM = 15
 
 /**
  * How many tubes hide their blocks on a level. One from `HIDDEN_FROM` to 19,
- * two from level 20 to 40 (the 8-, 9- and 10-colour tiers), and three from
- * `EXPERT_FROM` on — the derived tier adds a second knowledge tax on top of
- * its longer scrambles. Always zero below `HIDDEN_FROM`.
+ * two from level 20 to 40 (the 8-, 9- and 10-colour tiers), and three on the
+ * derived tier through level 50. From `CLIMB_FROM` the back-loaded climb takes
+ * over: 3, 5, 9 and 12 vials at its four anchors, interpolated between them.
+ * Always zero below `HIDDEN_FROM`.
  */
 export function hiddenTubeCount(level: number): number {
   if (level < HIDDEN_FROM) return 0
+  if (level >= CLIMB_FROM) return climbHiddenCount(level)
   if (level >= EXPERT_FROM) return 3
   return level >= SPARES_LOCK_FROM ? 2 : 1
+}
+
+/**
+ * The four anchors of the concealment climb (ticket 21): 3 vials at 51, 5 by
+ * 70, 9 by 85 and 12 at 100. A level between anchors interpolates, so the count
+ * is derived from the level number instead of a fifty-row table. Rounding gives
+ * a stepped, monotonic ramp (3→4→5 over the first stretch, then the climb
+ * accelerates) without ever asking for more vials than the board can host.
+ */
+const CLIMB_HIDDEN_ANCHORS: readonly (readonly [level: number, count: number])[] = [
+  [CLIMB_FROM, 3],
+  [70, 5],
+  [85, 9],
+  [MAX_LEVEL, 12],
+]
+
+function climbHiddenCount(level: number): number {
+  for (let i = 1; i < CLIMB_HIDDEN_ANCHORS.length; i++) {
+    const [toLevel, toCount] = CLIMB_HIDDEN_ANCHORS[i]
+    if (level <= toLevel) {
+      const [fromLevel, fromCount] = CLIMB_HIDDEN_ANCHORS[i - 1]
+      const span = toLevel - fromLevel
+      return fromCount + Math.round(((level - fromLevel) * (toCount - fromCount)) / span)
+    }
+  }
+  return CLIMB_HIDDEN_ANCHORS[CLIMB_HIDDEN_ANCHORS.length - 1][1]
 }
 
 /** Clamp any input into the valid `1..MAX_LEVEL` range. */
@@ -169,9 +225,11 @@ export function clampLevel(level: number): number {
  * Levels 1–40 are the validated hand-tuned table. From `EXPERT_FROM` the
  * config is derived from the level number: colours step up every
  * `EXPERT_COLOR_STEP_LEVELS` levels until the phone's palette ceiling, while
- * the scramble cycles through a rising five-step pattern. The derivation is
- * pure and deterministic, so the same level always makes the same board, and
- * raising `MAX_LEVEL` is all that is needed to add more levels later.
+ * the scramble cycles through a rising five-step pattern. From `CLIMB_FROM`
+ * that cycle stops at the gate's scramble ceiling and the level is fixed at 12
+ * colours and two spares — the back-loaded climb is carried by concealment.
+ * The derivation is pure and deterministic, so the same level always makes the
+ * same board, and raising `MAX_LEVEL` is all that is needed to add more levels.
  *
  * Clamping (rather than throwing) keeps a corrupt save or a bad call from
  * taking the app down. Progress is clamped independently on load.
@@ -179,6 +237,13 @@ export function clampLevel(level: number): number {
 export function levelConfig(level: number): LevelConfig {
   const safe = clampLevel(level)
   if (safe <= LEVELS.length) return LEVELS[safe - 1]
+  if (safe >= CLIMB_FROM) {
+    return {
+      colors: EXPERT_MAX_COLORS,
+      emptyTubes: EXPERT_EMPTY_TUBES,
+      scramble: CLIMB_SCRAMBLE,
+    }
+  }
 
   const since = safe - EXPERT_FROM
   const colors = Math.min(

@@ -27,6 +27,20 @@ describe('hiddenTubeCount', () => {
     expect(hiddenTubeCount(50)).toBe(3)
   })
 
+  it('climbs back-loaded through the anchors, monotonic and never above 12', () => {
+    expect(hiddenTubeCount(51)).toBe(3)
+    expect(hiddenTubeCount(70)).toBe(5)
+    expect(hiddenTubeCount(85)).toBe(9)
+    expect(hiddenTubeCount(100)).toBe(12)
+    let previous = hiddenTubeCount(50)
+    for (let level = 51; level <= 100; level++) {
+      const count = hiddenTubeCount(level)
+      expect(count, `level ${level}`).toBeGreaterThanOrEqual(previous)
+      expect(count, `level ${level}`).toBeLessThanOrEqual(12)
+      previous = count
+    }
+  })
+
   it('never asks a sub-1 level for hidden tubes', () => {
     expect(hiddenTubeCount(0)).toBe(0)
     expect(hiddenTubeCount(-3)).toBe(0)
@@ -94,5 +108,33 @@ describe('per-level pick (integration pin)', () => {
     expect(pickHiddenTubes(45, realTubes(45))).toEqual([12, 6, 9])
     expect(pickHiddenTubes(46, realTubes(46))).toEqual([1, 6, 4])
     expect(pickHiddenTubes(50, realTubes(50))).toEqual([6, 8, 7])
+  })
+
+  it('pins the picks at each anchor of the climb', () => {
+    // Four anchors of the derived 3→12 schedule. The whole range is monotonic
+    // and hostable (pinned in levels.test.ts); these pin the hash picks on the
+    // actual boards so a generator change cannot silently move them.
+    expect(pickHiddenTubes(51, realTubes(51))).toEqual([0, 3, 9])
+    expect(pickHiddenTubes(70, realTubes(70))).toEqual([8, 4, 13, 1, 6])
+    expect(pickHiddenTubes(85, realTubes(85))).toEqual([6, 13, 9, 7, 11, 1, 8, 10, 5])
+    expect(pickHiddenTubes(100, realTubes(100))).toEqual([
+      4, 6, 3, 8, 12, 2, 13, 7, 11, 9, 0, 10,
+    ])
+  })
+
+  it('hides every candidate at level 100, including the lockable spare', () => {
+    const level = generateLevel(100)
+    const tubes = level.board.map((colors) => ({ colors }))
+    const used = new Set(level.solution.map((move) => move.to))
+    const candidates = tubes.filter((tube) => tube.colors.length > 1)
+    expect(candidates).toHaveLength(12)
+
+    const picks = pickHiddenTubes(100, tubes)
+    expect(picks).toHaveLength(12)
+    expect(new Set(picks).size).toBe(12)
+    // Do not exclude the spare ticket 22 pads: it is one of the twelve ? vials.
+    expect(picks.some((index) => (index === 12 || index === 13) && !used.has(index))).toBe(
+      true,
+    )
   })
 })

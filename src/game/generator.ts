@@ -9,7 +9,7 @@
  * Everything here is pure: no DOM, no storage, no clock and no `Math.random`.
  * The same level number yields the same board on every device.
  */
-import { clampLevel, levelConfig, type LevelConfig } from './levels'
+import { CLIMB_FROM, LATE_BOARD_MIN_MULTI, clampLevel, levelConfig, type LevelConfig } from './levels'
 import {
   DEFAULT_CAPACITY,
   isComplete,
@@ -202,13 +202,49 @@ interface Search {
   last: Level | null
 }
 
+/**
+ * Ticket 20's shape rule for the back-loaded climb. A gate-passing board is
+ * only accepted from level 51 when one of its two generated spares is never a
+ * solution destination (ticket 22 can padlock it) and at least twelve tubes
+ * hold two or more units (level 100's twelve concealed vials all have a home).
+ *
+ * This is a filter on which seed `search` returns, not a change to the reverse
+ * moves or the quality gate. Levels 1–50 never call it, so their boards,
+ * solutions and snapshots are byte-for-byte the shipped ones.
+ */
+function hasLateBoardShape(level: Level, config: LevelConfig): boolean {
+  const spareStart = level.board.length - config.emptyTubes
+  if (spareStart < 0) return false
+
+  const used = new Set(level.solution.map((move) => move.to))
+  let spareUnused = false
+  for (let index = spareStart; index < level.board.length; index++) {
+    if (!used.has(index)) {
+      spareUnused = true
+      break
+    }
+  }
+  if (!spareUnused) return false
+
+  let multiUnitTubes = 0
+  for (const tube of level.board) {
+    if (tube.length >= 2) multiUnitTubes++
+  }
+  return multiUnitTubes >= LATE_BOARD_MIN_MULTI
+}
+
 /** Up to `ATTEMPTS` seeds for one config. */
 function search(config: LevelConfig, level: number): Search {
   let last: Level | null = null
   for (let index = 0; index < ATTEMPTS; index++) {
     const result = attempt(config, seedFor(level, config.scramble, index))
     if (result.level.board.length > 0) last = result.level
-    if (result.mixed) return { found: result.level, last }
+    if (
+      result.mixed &&
+      (level < CLIMB_FROM || hasLateBoardShape(result.level, config))
+    ) {
+      return { found: result.level, last }
+    }
   }
   return { found: null, last }
 }

@@ -1290,7 +1290,7 @@ describe('level jump (ticket 11)', () => {
   })
 
   it('clamps a jump outside the board range', () => {
-    expect(harness([[1]], {}, {}, 99).boards).toEqual([MAX_LEVEL])
+    expect(harness([[1]], {}, {}, MAX_LEVEL + 10).boards).toEqual([MAX_LEVEL])
     expect(harness([[1]], {}, {}, 0).boards).toEqual([1])
   })
 
