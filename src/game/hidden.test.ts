@@ -21,6 +21,10 @@ describe('hiddenTubeCount', () => {
     // wider board are the difficulty step, not a change to concealment.
     expect(hiddenTubeCount(31)).toBe(2)
     expect(hiddenTubeCount(40)).toBe(2)
+    // The derived expert tier adds a third concealed tube on top of its
+    // longer scrambles (ticket 19).
+    expect(hiddenTubeCount(41)).toBe(3)
+    expect(hiddenTubeCount(50)).toBe(3)
   })
 
   it('never asks a sub-1 level for hidden tubes', () => {
@@ -84,5 +88,11 @@ describe('per-level pick (integration pin)', () => {
     // hash keeps them off the spares and spread across the row.
     expect(pickHiddenTubes(31, realTubes(31))).toEqual([9, 3])
     expect(pickHiddenTubes(40, realTubes(40))).toEqual([9, 4])
+    // Ticket 19's derived tier: three tubes, spread across the board and never
+    // on a spare. The appended extra spare is empty, so it cannot be picked.
+    expect(pickHiddenTubes(41, realTubes(41))).toEqual([8, 11, 5])
+    expect(pickHiddenTubes(45, realTubes(45))).toEqual([12, 6, 9])
+    expect(pickHiddenTubes(46, realTubes(46))).toEqual([1, 6, 4])
+    expect(pickHiddenTubes(50, realTubes(50))).toEqual([6, 8, 7])
   })
 })

@@ -997,11 +997,34 @@ describe('guaranteed spare (ticket 18)', () => {
     expect(h.controller.state.tubes[spare].open).toBe(0)
   })
 
-  it('applies through level 40', () => {
+  it('applies through the last level', () => {
     const h = harness(board, {}, { level: MAX_LEVEL, highest: MAX_LEVEL }, undefined, solution)
     h.controller.start()
     expect(h.controller.state.tubes).toHaveLength(board.length + 1)
     expect(h.controller.state.tubes.at(-1)?.open).toBe(0)
+  })
+
+  it('skips the extra spare once the board fills two rows (ticket 19)', () => {
+    // A 15th tube would force a third row on a 360px phone. The 12-colour tier
+    // is already 14 tubes, so it keeps its two spares and its extra colours.
+    const full = Array.from({ length: 14 }, (_, i) => [i % 4, i % 4])
+    const h = harness(full, {}, { level: 46, highest: 46 })
+    h.controller.start()
+    expect(h.controller.state.tubes).toHaveLength(14)
+    expect(h.controller.state.tubes.every((t) => t.open === undefined)).toBe(true)
+
+    const roomy = Array.from({ length: 13 }, (_, i) => [i % 4, i % 4])
+    const h2 = harness(roomy, {}, { level: 41, highest: 41 })
+    h2.controller.start()
+    expect(h2.controller.state.tubes).toHaveLength(14)
+    expect(h2.controller.state.tubes.at(-1)?.open).toBe(0)
+  })
+
+  it('conceals three tubes on the derived expert tier (ticket 19)', () => {
+    const many = Array.from({ length: 13 }, (_, i) => [i % 4, i % 4])
+    const h = harness(many, {}, { level: 41, highest: 41 })
+    h.controller.start()
+    expect(h.controller.state.tubes.filter((t) => t.hidden !== undefined)).toHaveLength(3)
   })
 })
 

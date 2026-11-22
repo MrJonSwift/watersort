@@ -15,9 +15,10 @@ export interface LevelConfig {
 }
 
 /**
- * The 40-level curve: 3 colours at level 1 up to 10 colours and 40 reverse
- * moves at level 40. Every level keeps two spare tubes; the ramp comes from
- * colours and scramble, never from taking a spare away.
+ * The hand-tuned 40-level curve: 3 colours at level 1 up to 10 colours and 40
+ * reverse moves at level 40. Levels past 40 are derived by `levelConfig`.
+ * Every level keeps two spare tubes; the ramp comes from colours and scramble,
+ * never from taking a spare away.
  *
  * Each new colour tier starts below the previous tier's last scramble, so the
  * extra colour is the step rather than the colour plus a scramble jump. The
@@ -68,7 +69,43 @@ export const LEVELS: readonly LevelConfig[] = [
   { colors: 10, emptyTubes: 2, scramble: 40 },
 ]
 
-export const MAX_LEVEL = LEVELS.length
+/**
+ * The last level people can reach. Levels 1–40 are the hand-tuned curve above;
+ * 41–`MAX_LEVEL` are derived by `levelConfig`, so extending the game is a
+ * one-line change here rather than a new row in a table. A procedural ramp is
+ * bounded by the phone (see `MAX_TWO_ROW_TUBES`), so "infinite" means unbounded
+ * in *level number*, not in board size — past the colour ceiling the ramp
+ * cycles its scramble rather than growing the board further.
+ */
+export const MAX_LEVEL = 50
+
+/** The first derived level. Everything up to 40 is the validated hand-tuned curve. */
+export const EXPERT_FROM = 41
+
+/** Colours at the start of the derived tier, and how often the count steps up. */
+const EXPERT_BASE_COLORS = 11
+const EXPERT_COLOR_STEP_LEVELS = 5
+/** The palette ceiling: 12 distinct colours is as far as a phone board can go. */
+const EXPERT_MAX_COLORS = 12
+
+/**
+ * Scramble formula for the derived tier: 38, 42, 46, 50, 54, repeating.
+ * The new colour is the step at a tier boundary, so the cycle starts below the
+ * hand-tuned tier's last scramble (40) — the same rule the earlier tiers use.
+ */
+const EXPERT_BASE_SCRAMBLE = 38
+const EXPERT_SCRAMBLE_STEP = 4
+const EXPERT_SCRAMBLE_CYCLE = 5
+
+/** Every derived level keeps the same two generated spares. */
+const EXPERT_EMPTY_TUBES = 2
+
+/**
+ * The most tubes that still fit in two rows of seven on a 360px phone (ticket
+ * 17's wide layout). The controller uses this to decide whether the extra
+ * spare from `EXTRA_SPARE_FROM` can be appended without forcing a third row.
+ */
+export const MAX_TWO_ROW_TUBES = 14
 
 /**
  * The level from which spare tubes may start sealed (tickets 09 and 14). Only
@@ -109,12 +146,14 @@ export const EXTRA_SPARE_FROM = 30
 export const HIDDEN_FROM = 15
 
 /**
- * How many tubes hide their blocks on a level. One from `HIDDEN_FROM` to 19;
- * two from level 20 on (the 8-, 9- and 10-colour tiers), where concealment
- * stacks on the sealed spares. Always zero below `HIDDEN_FROM`.
+ * How many tubes hide their blocks on a level. One from `HIDDEN_FROM` to 19,
+ * two from level 20 to 40 (the 8-, 9- and 10-colour tiers), and three from
+ * `EXPERT_FROM` on — the derived tier adds a second knowledge tax on top of
+ * its longer scrambles. Always zero below `HIDDEN_FROM`.
  */
 export function hiddenTubeCount(level: number): number {
   if (level < HIDDEN_FROM) return 0
+  if (level >= EXPERT_FROM) return 3
   return level >= SPARES_LOCK_FROM ? 2 : 1
 }
 
@@ -127,9 +166,26 @@ export function clampLevel(level: number): number {
 /**
  * Config for a level number, clamped into `1..MAX_LEVEL`.
  *
+ * Levels 1–40 are the validated hand-tuned table. From `EXPERT_FROM` the
+ * config is derived from the level number: colours step up every
+ * `EXPERT_COLOR_STEP_LEVELS` levels until the phone's palette ceiling, while
+ * the scramble cycles through a rising five-step pattern. The derivation is
+ * pure and deterministic, so the same level always makes the same board, and
+ * raising `MAX_LEVEL` is all that is needed to add more levels later.
+ *
  * Clamping (rather than throwing) keeps a corrupt save or a bad call from
  * taking the app down. Progress is clamped independently on load.
  */
 export function levelConfig(level: number): LevelConfig {
-  return LEVELS[clampLevel(level) - 1]
+  const safe = clampLevel(level)
+  if (safe <= LEVELS.length) return LEVELS[safe - 1]
+
+  const since = safe - EXPERT_FROM
+  const colors = Math.min(
+    EXPERT_MAX_COLORS,
+    EXPERT_BASE_COLORS + Math.floor(since / EXPERT_COLOR_STEP_LEVELS),
+  )
+  const scramble =
+    EXPERT_BASE_SCRAMBLE + (since % EXPERT_SCRAMBLE_CYCLE) * EXPERT_SCRAMBLE_STEP
+  return { colors, emptyTubes: EXPERT_EMPTY_TUBES, scramble }
 }

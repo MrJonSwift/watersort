@@ -18,7 +18,13 @@
 import { advanceDraw, type Challenge } from './challenges'
 import type { Level } from './generator'
 import { pickHiddenTubes } from './hidden'
-import { EXTRA_SPARE_FROM, MAX_LEVEL, SPARES_LOCK_FROM, clampLevel } from './levels'
+import {
+  EXTRA_SPARE_FROM,
+  MAX_LEVEL,
+  MAX_TWO_ROW_TUBES,
+  SPARES_LOCK_FROM,
+  clampLevel,
+} from './levels'
 import type { Progress } from './progress'
 import { canGrow, isComplete, openSlots } from './rules'
 import type { SoundName } from './audio'
@@ -229,12 +235,18 @@ export function createController(ports: ControllerPorts): Controller {
    * ticket 09), from `EXTRA_SPARE_FROM` an extra empty appended after generation
    * gives every level a guaranteed optional padlock (ticket 18), and at or above
    * `HIDDEN_FROM` a seeded pick of the tubes holding colours starts concealed
-   * (ticket 10). Neither happens in the wiring; the controller owns the session.
+   * (ticket 10). The extra spare only goes on a board that still fits in two
+   * seven-wide rows on a phone; the 12-colour tier is already at that ceiling,
+   * so it keeps its two generated spares and its extra colours instead. Neither
+   * happens in the wiring; the controller owns the session.
    */
   function buildBoard(next: number): GameState {
     const { board, solution } = ports.board(next)
     const built = createGame(board)
-    const withSpare = next >= EXTRA_SPARE_FROM ? addExtraSpare(built) : built
+    const withSpare =
+      next >= EXTRA_SPARE_FROM && built.tubes.length < MAX_TWO_ROW_TUBES
+        ? addExtraSpare(built)
+        : built
     const sealed = next >= SPARES_LOCK_FROM ? sealSpares(withSpare, solution) : withSpare
     const hidden = pickHiddenTubes(next, sealed.tubes)
     return hidden.length > 0 ? hideBlocks(sealed, hidden) : sealed

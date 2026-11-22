@@ -187,6 +187,9 @@ describe('generateLevel', () => {
       return total / (to - from + 1)
     }
     expect(average(20, 30)).toBeGreaterThan(average(1, 3))
+    // Ticket 19: the derived expert tier is longer again than the 10-colour
+    // end of the hand-tuned curve, from scramble alone.
+    expect(average(41, 50)).toBeGreaterThan(average(36, 40))
   })
 
   it('gives every level a different board', () => {
@@ -226,7 +229,9 @@ describe('generateLevel', () => {
     // appears on any shipped board even with ten colours. Recorded so a board
     // re-roll — a content decision — shows up. Ticket 18 appends a spare at
     // build time from level 30, so the controller shows a padlock without
-    // changing any board or solution asserted here.
+    // changing any board or solution asserted here. Ticket 19's derived levels
+    // keep the same property: each generated empty is a solution destination,
+    // so the appended spare (41–45) is their only guaranteed padlock.
     for (let level = SPARES_LOCK_FROM; level <= MAX_LEVEL; level++) {
       const { board, solution } = generateLevel(level)
       const sealed = sealSpares(createGame(board), solution)

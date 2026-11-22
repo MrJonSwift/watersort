@@ -17,6 +17,8 @@ export const PALETTE: readonly RGB[] = [
   [255, 154, 61], // 7 orange
   [64, 216, 255], // 8 cyan
   [230, 70, 220], // 9 magenta
+  [150, 90, 50], // 10 brown
+  [100, 80, 200], // 11 indigo
 ] as const
 
 export function rgbOf(id: number): RGB {
@@ -49,7 +51,7 @@ export function darken(color: RGB, t: number): RGB {
   return mix(color, BLACK, t)
 }
 
-/** Publish the palette as CSS custom properties `--c-0 … --c-9`. */
+/** Publish the palette as CSS custom properties `--c-0 … --c-11`. */
 export function applyPaletteToCss(root: HTMLElement = document.documentElement): void {
   PALETTE.forEach((color, id) => {
     root.style.setProperty(`--c-${id}`, rgbCss(color))

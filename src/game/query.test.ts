@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseLevelJump } from './query'
 import { MAX_LEVEL } from './levels'
 
-// The jump follows the level table, so extending it to 40 needs no parser edit.
+// The jump follows MAX_LEVEL, so extending the curve needs no parser edit.
 const MAX = MAX_LEVEL
 
 describe('parseLevelJump', () => {
@@ -11,6 +11,7 @@ describe('parseLevelJump', () => {
     expect(parseLevelJump('?level=1', MAX)).toBe(1)
     expect(parseLevelJump('?level=30', MAX)).toBe(30)
     expect(parseLevelJump('?level=40', MAX)).toBe(40)
+    expect(parseLevelJump('?level=50', MAX)).toBe(50)
   })
 
   it('ignores a missing parameter', () => {

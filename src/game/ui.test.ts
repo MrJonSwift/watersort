@@ -135,7 +135,7 @@ describe('tubeColumns', () => {
     }
     const ui = createUI(root, handlers)
     const view = {
-      level: 40,
+      level: MAX_LEVEL,
       maxLevel: MAX_LEVEL,
       primary: 'restart' as const,
       undoCredits: 5,
