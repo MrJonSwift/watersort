@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createGame, growBlock, hideBlocks, sealSpares, tap, undo } from './state'
+import { addExtraSpare, createGame, growBlock, hideBlocks, sealSpares, tap, undo } from './state'
 import { pour } from './rules'
 import type { GameState, Move } from './types'
 
@@ -8,6 +8,35 @@ function opened(): GameState {
   const game = createGame([[1, 1], []])
   return { ...game, tubes: [game.tubes[0], { colors: [], open: 2 }] }
 }
+
+describe('addExtraSpare (ticket 18)', () => {
+  it('appends one empty tube without shifting the generated indices', () => {
+    const game = createGame([[1, 1, 1], [1], [], []])
+    const next = addExtraSpare(game)
+
+    expect(next.tubes).toHaveLength(game.tubes.length + 1)
+    expect(next.tubes.slice(0, game.tubes.length)).toEqual(game.tubes)
+    expect(next.tubes.at(-1)).toEqual({ colors: [] })
+    expect(game.tubes).toHaveLength(4) // immutable
+  })
+
+  it('the appended spare is the one that seals, so the solution stays a clean win', () => {
+    // Like every shipped board, the solution uses the generated empty (2);
+    // only the appended spare (3) is untouched and therefore sealed.
+    const game = createGame([[1, 1, 1], [1], []])
+    const solution: Move[] = [
+      { from: 1, to: 2, amount: 1 },
+      { from: 2, to: 0, amount: 1 },
+    ]
+    const built = sealSpares(addExtraSpare(game), solution)
+
+    expect(built.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, undefined, 0])
+    let state = built
+    for (const move of solution) state = pour(state, move.from, move.to)
+    expect(state.tubes[3]).toEqual({ colors: [], open: 0 }) // never opened
+    expect(state.won).toBe(true)
+  })
+})
 
 describe('sealSpares', () => {
   const board = [[1, 2, 1, 2], [2], [], []]

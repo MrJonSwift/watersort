@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEVELS, MAX_LEVEL, levelConfig } from './levels'
+import { EXTRA_SPARE_FROM, LEVELS, MAX_LEVEL, SPARES_LOCK_FROM, levelConfig } from './levels'
 
 /**
  * The validated curve as `colours/spare/scramble`. This is the contract the
@@ -35,6 +35,14 @@ describe('levels', () => {
     expect(LEVELS.map((l) => `${l.colors}/${l.emptyTubes}/${l.scramble}`)).toEqual(CURVE)
     expect(MAX_LEVEL).toBe(LEVELS.length)
     expect(MAX_LEVEL).toBe(40)
+  })
+
+  it('appends the guaranteed spare from level 30 (ticket 18)', () => {
+    // A content pin: moving this changes which levels show a padlock. The
+    // generated curve above is untouched by it.
+    expect(EXTRA_SPARE_FROM).toBe(30)
+    expect(EXTRA_SPARE_FROM).toBeGreaterThanOrEqual(SPARES_LOCK_FROM)
+    expect(EXTRA_SPARE_FROM).toBeLessThanOrEqual(MAX_LEVEL)
   })
 
   it('never removes a spare tube and never jumps backwards in colour', () => {

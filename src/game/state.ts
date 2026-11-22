@@ -49,6 +49,17 @@ export function sealSpares(state: GameState, solution: readonly Move[]): GameSta
 }
 
 /**
+ * Append the guaranteed spare from `EXTRA_SPARE_FROM` (ticket 18). It is added
+ * after generation, so every tube index in the validated solution stays valid
+ * and never names this one. `sealSpares` therefore locks it while leaving the
+ * level winnable without a question; a player who gets stuck can earn slots in
+ * it through the gate. Pure: the incoming state is not mutated.
+ */
+export function addExtraSpare(state: GameState): GameState {
+  return { ...state, tubes: [...state.tubes, { colors: [] }] }
+}
+
+/**
  * Grow a spare by one open slot — the reward a correct gate answer grants.
  * Pure: only a spare with room to grow changes. Since ticket 15 a spare may
  * keep growing while it holds colour; the new slot opens above what is poured.

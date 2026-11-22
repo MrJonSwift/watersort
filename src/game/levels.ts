@@ -82,11 +82,22 @@ export const MAX_LEVEL = LEVELS.length
  *
  * Ticket 15 adds the padlock affordance but leaves the 20–30 curve alone; the
  * owner declined a re-roll after seeing the cost (20–23 would have had to
- * become easier than level 19). Ticket 17's new boards are the first that may
- * show a lock: whichever of their unused empties the validated solution leaves
- * alone is sealed, and that outcome is pinned in `generator.test.ts`.
+ * become easier than level 19). Ticket 17's new boards kept that outcome: the
+ * generator uses every empty, so `generateLevel` alone still shows no lock
+ * (pinned in `generator.test.ts`). Ticket 18 gives levels from
+ * `EXTRA_SPARE_FROM` an appended spare, which is what makes a padlock visible.
  */
 export const SPARES_LOCK_FROM = 20
+
+/**
+ * The level from which the board carries one extra empty spare beyond the two
+ * the generator scrambles into (ticket 18). It is appended *after* generation,
+ * so the validated solution's tube indices stay valid and never name it:
+ * solution-aware sealing then leaves exactly one guaranteed padlock. Generated
+ * boards, solutions, snapshots and curve tokens stay byte-for-byte the same.
+ * Moving this line changes which levels show a lock — a content decision.
+ */
+export const EXTRA_SPARE_FROM = 30
 
 /**
  * The level from which a tube starts with hidden blocks (ticket 10): one of

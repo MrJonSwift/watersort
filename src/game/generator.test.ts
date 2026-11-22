@@ -224,11 +224,21 @@ describe('generateLevel', () => {
     // stands. Ticket 17's probe of 31–40 found the same: 31 has no empty and
     // each of 32–40 has exactly one, used by the solution, so no padlock
     // appears on any shipped board even with ten colours. Recorded so a board
-    // re-roll — a content decision — shows up.
+    // re-roll — a content decision — shows up. Ticket 18 appends a spare at
+    // build time from level 30, so the controller shows a padlock without
+    // changing any board or solution asserted here.
     for (let level = SPARES_LOCK_FROM; level <= MAX_LEVEL; level++) {
       const { board, solution } = generateLevel(level)
       const sealed = sealSpares(createGame(board), solution)
       expect(sealed.tubes.some((tube) => tube.open === 0), `level ${level}`).toBe(false)
+    }
+  })
+
+  it('generation still ships exactly its configured colours and two spares', () => {
+    // The ticket-18 spare is appended by the controller, never generated.
+    for (let level = 1; level <= MAX_LEVEL; level++) {
+      const config = levelConfig(level)
+      expect(generateLevel(level).board).toHaveLength(config.colors + config.emptyTubes)
     }
   })
 })

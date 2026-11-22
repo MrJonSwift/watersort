@@ -12,7 +12,7 @@ import {
 } from './controller'
 import type { Challenge } from './challenges'
 import { pickHiddenTubes } from './hidden'
-import { HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
+import { EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
@@ -913,6 +913,95 @@ describe('padlocks (ticket 15)', () => {
     const shows = h.challengeShows.length
     h.controller.tapPadlock(1)
     expect(h.challengeShows).toHaveLength(shows)
+  })
+})
+
+describe('guaranteed spare (ticket 18)', () => {
+  // Like every shipped board, the solution uses the generated empty (2), so
+  // only the appended spare seals. A clean solve never needs the lock.
+  const board = [[1, 1, 1], [1], []]
+  const solution: Move[] = [
+    { from: 1, to: 2, amount: 1 },
+    { from: 2, to: 0, amount: 1 },
+  ]
+  const final = { level: EXTRA_SPARE_FROM, highest: EXTRA_SPARE_FROM }
+
+  it('adds one guaranteed lock from level 30, none below', () => {
+    const before = harness(
+      board,
+      {},
+      { level: EXTRA_SPARE_FROM - 1, highest: EXTRA_SPARE_FROM - 1 },
+      undefined,
+      solution,
+    )
+    before.controller.start()
+    expect(before.controller.state.tubes).toHaveLength(board.length)
+    expect(before.controller.state.tubes.every((tube) => tube.open === undefined)).toBe(true)
+
+    const h = harness(board, {}, final, undefined, solution)
+    h.controller.start()
+    expect(h.controller.state.tubes).toHaveLength(board.length + 1)
+    expect(h.controller.state.tubes.map((tube) => tube.open)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      0,
+    ])
+  })
+
+  it('wins by replaying the solution with the spare still sealed and no gate', () => {
+    const h = harness(board, {}, final, undefined, solution)
+    h.controller.start()
+
+    for (const move of solution) {
+      h.controller.tap(move.from)
+      h.controller.tap(move.to)
+    }
+
+    expect(h.controller.state.won).toBe(true)
+    expect(h.controller.state.tubes.at(-1)).toEqual({ colors: [], open: 0 })
+    expect(h.challengeShows).toEqual([])
+    expect(h.rewards).toEqual([])
+  })
+
+  it('is a real escape hatch: slots are earned one at a time and can hold colour', () => {
+    const h = harness(board, {}, final, undefined, solution)
+    h.controller.start()
+    const spare = board.length
+
+    h.controller.tapPadlock(spare)
+    expect(h.rewards).toEqual([{ kind: 'grow', tube: spare }])
+    h.controller.answer(h.challengeShows[0].answer)
+    expect(h.controller.state.tubes[spare].open).toBe(1)
+
+    h.controller.tap(1)
+    h.controller.tap(spare)
+    expect(h.controller.state.tubes[spare]).toMatchObject({ colors: [1], open: 1 })
+
+    // The padlock, not the empty rule, opens the gate again (ticket 15).
+    h.controller.tapPadlock(spare)
+    expect(h.rewards.at(-1)).toEqual({ kind: 'grow', tube: spare })
+    h.controller.answer(h.challengeShows.at(-1)!.answer)
+    expect(h.controller.state.tubes[spare].open).toBe(2)
+  })
+
+  it('rebuilds the spare sealed on restart', () => {
+    const h = harness(board, {}, final, undefined, solution)
+    h.controller.start()
+    const spare = board.length
+    h.controller.tapPadlock(spare)
+    h.controller.answer(h.challengeShows[0].answer)
+    expect(h.controller.state.tubes[spare].open).toBe(1)
+
+    h.controller.restart()
+    expect(h.controller.state.tubes[spare].open).toBe(0)
+  })
+
+  it('applies through level 40', () => {
+    const h = harness(board, {}, { level: MAX_LEVEL, highest: MAX_LEVEL }, undefined, solution)
+    h.controller.start()
+    expect(h.controller.state.tubes).toHaveLength(board.length + 1)
+    expect(h.controller.state.tubes.at(-1)?.open).toBe(0)
   })
 })
 
