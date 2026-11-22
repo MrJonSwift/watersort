@@ -1,3 +1,4 @@
+import { CLIMB_FROM, levelConfig } from './levels'
 import { DEFAULT_CAPACITY, canGrow, canPour, openSlots, pour } from './rules'
 import type { ColorId, GameState, Move } from './types'
 
@@ -36,15 +37,40 @@ export function createGame(
  * uses every empty, no tube is sealed at all; that is recorded, deliberate,
  * and preferable to re-rolling a board people have already played.
  *
- * Tubes holding colours never carry `open`; rules never read the solution.
+ * Tubes holding colours never carry `open` below the climb; rules never read
+ * the solution.
+ *
+ * Ticket 22 extends the rule from `CLIMB_FROM`: the generator guarantees at
+ * least one solution-unused spare (index 12 or 13) that is *full of colour*, so
+ * from that level the first unused spare is sealed even when it holds colour —
+ * only one, so a second unused spare stays plain. Its colour is kept, the
+ * padlocks frost the top slots, and `open = 0` still means nothing can pour in
+ * until a question is answered. It stays a valid source: the validated
+ * solution pours *out* of it, so a question-free win is untouched.
+ * Gating on the level is what keeps 1–50 byte-for-byte frozen.
  */
-export function sealSpares(state: GameState, solution: readonly Move[]): GameState {
+export function sealSpares(
+  state: GameState,
+  solution: readonly Move[],
+  level: number,
+): GameState {
   const used = new Set(solution.map((move) => move.to))
+  const spareStart = state.tubes.length - levelConfig(level).emptyTubes
+  // Some climb boards leave both generated spares unused. Ticket 22 pads
+  // exactly one — the first — so the other stays a plain escape hatch.
+  const lockIndex =
+    level >= CLIMB_FROM
+      ? state.tubes.findIndex((_, index) => index >= spareStart && !used.has(index))
+      : -1
   return {
     ...state,
-    tubes: state.tubes.map((tube, index) =>
-      tube.colors.length === 0 && !used.has(index) ? { colors: [], open: 0 } : tube,
-    ),
+    tubes: state.tubes.map((tube, index) => {
+      if (used.has(index)) return tube
+      if (index === lockIndex) {
+        return { ...tube, colors: [...tube.colors], open: 0 }
+      }
+      return tube.colors.length === 0 ? { ...tube, colors: [], open: 0 } : tube
+    }),
   }
 }
 
@@ -63,7 +89,9 @@ export function addExtraSpare(state: GameState): GameState {
  * Grow a spare by one open slot — the reward a correct gate answer grants.
  * Pure: only a spare with room to grow changes. Since ticket 15 a spare may
  * keep growing while it holds colour; the new slot opens above what is poured.
- * Ordinary and fully open tubes are untouched.
+ * Concealment rides along untouched (ticket 22): a vial that is both padded
+ * and concealed stays concealed when a block is earned. Ordinary and fully
+ * open tubes are untouched.
  */
 export function growBlock(state: GameState, index: number): GameState {
   const tube = state.tubes[index]
@@ -71,7 +99,9 @@ export function growBlock(state: GameState, index: number): GameState {
   return {
     ...state,
     tubes: state.tubes.map((t, i) =>
-      i === index ? { colors: [...t.colors], open: openSlots(t, state.capacity) + 1 } : t,
+      i === index
+        ? { ...t, colors: [...t.colors], open: openSlots(t, state.capacity) + 1 }
+        : t,
     ),
   }
 }
@@ -83,7 +113,9 @@ export function growBlock(state: GameState, index: number): GameState {
  * of sealed spares.
  *
  * Since ticket 13 the top unit is always seen: a hidden tube of N units
- * conceals N−1 of them, so a one-unit tube hides nothing.
+ * conceals N−1 of them, so a one-unit tube hides nothing. A padlock survives
+ * the pass (ticket 22): from the climb the concealed vial can also be a sealed
+ * spare, so its `open` count is carried through.
  */
 export function hideBlocks(state: GameState, indices: readonly number[]): GameState {
   const picked = new Set(indices)
@@ -91,7 +123,7 @@ export function hideBlocks(state: GameState, indices: readonly number[]): GameSt
     ...state,
     tubes: state.tubes.map((tube, index) =>
       picked.has(index) && tube.colors.length > 1
-        ? { colors: [...tube.colors], hidden: tube.colors.length - 1 }
+        ? { ...tube, colors: [...tube.colors], hidden: tube.colors.length - 1 }
         : tube,
     ),
   }

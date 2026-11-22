@@ -235,10 +235,13 @@ export function createController(ports: ControllerPorts): Controller {
    * ticket 09), from `EXTRA_SPARE_FROM` an extra empty appended after generation
    * gives every level a guaranteed optional padlock (ticket 18), and at or above
    * `HIDDEN_FROM` a seeded pick of the tubes holding colours starts concealed
-   * (ticket 10). The extra spare only goes on a board that still fits in two
-   * seven-wide rows on a phone; the 12-colour tier is already at that ceiling,
-   * so it keeps its two generated spares and its extra colours instead. Neither
-   * happens in the wiring; the controller owns the session.
+   * (ticket 10). From `CLIMB_FROM`, `sealSpares` also locks the solution-unused
+   * spare that the generator fills with colour (ticket 22) — the level number
+   * passed through is what keeps 1–50 on the old empty-only rule. The extra
+   * spare only goes on a board that still fits in two seven-wide rows on a
+   * phone; the 12-colour tier is already at that ceiling, so it keeps its two
+   * generated spares and its extra colours instead. Neither happens in the
+   * wiring; the controller owns the session.
    */
   function buildBoard(next: number): GameState {
     const { board, solution } = ports.board(next)
@@ -247,7 +250,8 @@ export function createController(ports: ControllerPorts): Controller {
       next >= EXTRA_SPARE_FROM && built.tubes.length < MAX_TWO_ROW_TUBES
         ? addExtraSpare(built)
         : built
-    const sealed = next >= SPARES_LOCK_FROM ? sealSpares(withSpare, solution) : withSpare
+    const sealed =
+      next >= SPARES_LOCK_FROM ? sealSpares(withSpare, solution, next) : withSpare
     const hidden = pickHiddenTubes(next, sealed.tubes)
     return hidden.length > 0 ? hideBlocks(sealed, hidden) : sealed
   }

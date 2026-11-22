@@ -11,8 +11,9 @@ import {
   type UIView,
 } from './controller'
 import type { Challenge } from './challenges'
+import { generateLevel } from './generator'
 import { pickHiddenTubes } from './hidden'
-import { EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
+import { CLIMB_FROM, EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
@@ -406,7 +407,10 @@ describe('undo budget', () => {
   })
 
   it('play again from the last level restores the budget', () => {
-    const h = harness([[1, 1], [1, 1]], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
+    // Two empty spares keep the coloured tubes off the ticket-22 lock: at the
+    // last level the first unused spare is padded, so a two-tube board would
+    // seal both sources and leave no pour to undo.
+    const h = harness([[1, 1], [1, 1], [], []], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
     h.controller.start()
     h.controller.tap(0)
     h.controller.tap(1)
@@ -1025,6 +1029,110 @@ describe('guaranteed spare (ticket 18)', () => {
     const h = harness(many, {}, { level: 41, highest: 41 })
     h.controller.start()
     expect(h.controller.state.tubes.filter((t) => t.hidden !== undefined)).toHaveLength(3)
+  })
+})
+
+describe('late coloured lock (ticket 22)', () => {
+  // The real level-51 board: 12 colours plus two generated spares already fill
+  // 14 tubes, so no extra spare is appended and the spare indices are 12/13.
+  const level = generateLevel(CLIMB_FROM)
+  const board = level.board
+  const solution = level.solution
+  const late = { level: CLIMB_FROM, highest: CLIMB_FROM }
+  const startLate = () => {
+    const h = harness(board, {}, late, undefined, solution)
+    h.controller.start()
+    return h
+  }
+
+  it('pads a solution-unused coloured spare from level 51, not below', () => {
+    const before = harness(
+      board,
+      {},
+      { level: CLIMB_FROM - 1, highest: CLIMB_FROM - 1 },
+      undefined,
+      solution,
+    )
+    before.controller.start()
+    expect(before.controller.state.tubes.some((t) => t.open === 0)).toBe(false)
+
+    const h = startLate()
+    expect(h.controller.state.tubes).toHaveLength(14)
+    const locks = h.controller.state.tubes
+      .map((tube, index) => ({ tube, index }))
+      .filter(({ tube }) => tube.open === 0)
+    expect(locks).toHaveLength(1)
+    expect(locks[0].index).toBeGreaterThanOrEqual(12)
+    expect(locks[0].tube.colors.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('wins by replaying the solution with the lock shut and no gate', () => {
+    const h = startLate()
+    const lock = h.controller.state.tubes.findIndex((t) => t.open === 0)
+
+    for (const move of solution) {
+      h.controller.tap(move.from)
+      h.controller.tap(move.to)
+    }
+
+    expect(h.controller.state.won).toBe(true)
+    expect(h.controller.state.tubes[lock]).toMatchObject({ colors: [], open: 0 })
+    expect(h.challengeShows).toEqual([])
+    expect(h.rewards).toEqual([])
+  })
+
+  it('the coloured padlock opens the gate one block at a time', () => {
+    const h = startLate()
+    const lock = h.controller.state.tubes.findIndex((t) => t.open === 0)
+    const colour = h.controller.state.tubes[lock].colors
+
+    h.controller.tapPadlock(lock)
+    for (let i = 0; i < 8; i++) h.controller.tapPadlock(lock) // rapid taps draw once
+    expect(h.rewards).toEqual([{ kind: 'grow', tube: lock }])
+    h.controller.answer(h.challengeShows[0].answer)
+    expect(h.controller.state.tubes[lock]).toEqual({ colors: colour, open: 1 })
+
+    // Colour inside is not a barrier to coming back for another block.
+    h.controller.tapPadlock(lock)
+    h.controller.answer(h.challengeShows.at(-1)!.answer)
+    expect(h.controller.state.tubes[lock]).toEqual({ colors: colour, open: 2 })
+  })
+
+  it('restart and next level reseal the coloured spare', () => {
+    const restart = startLate()
+    const lock = restart.controller.state.tubes.findIndex((t) => t.open === 0)
+    restart.controller.tapPadlock(lock)
+    restart.controller.answer(restart.challengeShows[0].answer)
+    expect(restart.controller.state.tubes[lock].open).toBe(1)
+    restart.controller.restart()
+    expect(restart.controller.state.tubes[lock].open).toBe(0)
+
+    const next = startLate()
+    next.controller.tapPadlock(lock)
+    next.controller.answer(next.challengeShows[0].answer)
+    next.controller.nextLevel()
+    expect(next.controller.state.tubes[lock].open).toBe(0)
+    expect(next.controller.level).toBe(CLIMB_FROM + 1)
+  })
+
+  it('level 100 hosts twelve question-mark vials and one of them is the padlock', () => {
+    const final = generateLevel(MAX_LEVEL)
+    const h = harness(
+      final.board,
+      {},
+      { level: MAX_LEVEL, highest: MAX_LEVEL },
+      undefined,
+      final.solution,
+    )
+    h.controller.start()
+    expect(h.controller.state.tubes).toHaveLength(14)
+    const hidden = h.controller.state.tubes
+      .map((tube, index) => ({ tube, index }))
+      .filter(({ tube }) => (tube.hidden ?? 0) > 0)
+    expect(hidden).toHaveLength(12)
+    const lock = h.controller.state.tubes.findIndex((t) => t.open === 0)
+    expect(lock, 'a padlock survives the concealment pass').toBeGreaterThanOrEqual(0)
+    expect(hidden.some(({ index }) => index === lock)).toBe(true)
   })
 })
 

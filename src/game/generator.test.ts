@@ -13,8 +13,9 @@ import {
   levelConfig,
   type LevelConfig,
 } from './levels'
+import { pickHiddenTubes } from './hidden'
 import { DEFAULT_CAPACITY, isComplete, isWon } from './rules'
-import { createGame, sealSpares, tap } from './state'
+import { createGame, hideBlocks, sealSpares, tap } from './state'
 import type { GameState } from './types'
 
 const CAP = DEFAULT_CAPACITY
@@ -71,7 +72,12 @@ function replay(level: Level): GameState {
  * makes this true by construction, so a lock can never be a toll on the path.
  */
 function replaySealed(level: Level): GameState {
-  return replayMoves(sealSpares(createGame(level.board), level.solution), level)
+  // The pre-climb rule: this helper checks the generator's own invariant. The
+  // ticket-22 coloured seal is asserted against real 51+ boards below.
+  return replayMoves(
+    sealSpares(createGame(level.board), level.solution, CLIMB_FROM - 1),
+    level,
+  )
 }
 
 function expectHardRequirements(level: Level, config: LevelConfig): void {
@@ -234,7 +240,9 @@ describe('generateLevel', () => {
         { from: 2, to: 0, amount: 1 },
       ],
     }
-    expect(sealSpares(createGame(level.board), level.solution).tubes[3].open).toBe(0)
+    expect(
+      sealSpares(createGame(level.board), level.solution, CLIMB_FROM - 1).tubes[3].open,
+    ).toBe(0)
     expect(isWon(replaySealed(level))).toBe(true)
   })
 
@@ -250,10 +258,13 @@ describe('generateLevel', () => {
     // build time from level 30, so the controller shows a padlock without
     // changing any board or solution asserted here. Ticket 19's derived levels
     // keep the same property: each generated empty is a solution destination,
-    // so the appended spare (41–45) is their only guaranteed padlock.
-    for (let level = SPARES_LOCK_FROM; level <= MAX_LEVEL; level++) {
+    // so the appended spare (41–45) is their only guaranteed padlock. Levels
+    // 46–50 have no appended spare at the 14-tube ceiling, so they have no lock
+    // either. From 51 ticket 22 deliberately does seal a coloured spare; that
+    // is asserted separately below.
+    for (let level = SPARES_LOCK_FROM; level < CLIMB_FROM; level++) {
       const { board, solution } = generateLevel(level)
-      const sealed = sealSpares(createGame(board), solution)
+      const sealed = sealSpares(createGame(board), solution, level)
       expect(sealed.tubes.some((tube) => tube.open === 0), `level ${level}`).toBe(false)
     }
   })
@@ -290,6 +301,56 @@ describe('generateLevel', () => {
       // mistaken for the padlock target. Only a full spare is lockable.
       board.forEach((tube, index) => {
         if (tube.length === 0) expect(used.has(index), `level ${level} empty ${index}`).toBe(true)
+      })
+    }
+  })
+
+  it('locks one coloured spare on every climb board and still wins without a question', () => {
+    // Ticket 22: the generator's shape rule hands over one solution-unused
+    // coloured spare at index 12/13. sealSpares pads it from level 51; the
+    // validated solution only pours *out* of it, so a sealed replay still wins.
+    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+      const { board, solution } = generateLevel(level)
+      const sealed = sealSpares(createGame(board), solution, level)
+      const locks = sealed.tubes
+        .map((tube, index) => ({ tube, index }))
+        .filter(({ tube }) => tube.open === 0)
+
+      expect(locks, `level ${level} lock count`).toHaveLength(1)
+      const lock = locks[0]
+      expect(lock.index, `level ${level} lock index`).toBeGreaterThanOrEqual(board.length - 2)
+      expect(lock.tube.colors.length, `level ${level} lock holds colour`).toBeGreaterThanOrEqual(2)
+      expect(solution.some((move) => move.to === lock.index), `level ${level} lock unused`).toBe(
+        false,
+      )
+
+      // The plain empty is not necessarily at a spare index: the generator
+      // scrambles colour into both spares and leaves one of the colour tubes
+      // empty. It is always a solution destination, so it never pads.
+      const empties = sealed.tubes
+        .map((tube, index) => ({ tube, index }))
+        .filter(({ tube }) => tube.colors.length === 0)
+      expect(empties, `level ${level} plain empties`).toHaveLength(1)
+      expect(empties[0].tube.open, `level ${level} plain spare open`).toBeUndefined()
+      expect(
+        solution.some((move) => move.to === empties[0].index),
+        `level ${level} empty is solution-used`,
+      ).toBe(true)
+
+      // Concealment must not block the path: the locked spare is a ? vial too.
+      // It is always a candidate; at level 100 all twelve candidates hide, so
+      // it is one of the twelve question-mark vials (also pinned in hidden.test).
+      const hidden = pickHiddenTubes(level, sealed.tubes)
+      if (level === MAX_LEVEL) {
+        expect(hidden, 'level 100 lock is one of the twelve ? vials').toContain(lock.index)
+      }
+      const withHidden = hideBlocks(sealed, hidden)
+      const finished = replayMoves(withHidden, { board, solution })
+      expect(isWon(finished), `level ${level} question-free win`).toBe(true)
+      expect(finished.tubes[lock.index], `level ${level} lock ends empty`).toEqual({
+        colors: [],
+        open: 0,
+        hidden: 0,
       })
     }
   })

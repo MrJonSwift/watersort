@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { pickHiddenTubes } from './hidden'
-import { HIDDEN_FROM, hiddenTubeCount } from './levels'
+import { CLIMB_FROM, HIDDEN_FROM, hiddenTubeCount } from './levels'
 import { generateLevel } from './generator'
-import { createGame } from './state'
+import { createGame, sealSpares } from './state'
 import type { Tube } from './types'
 
 const tube = (...colors: number[]): Tube => ({ colors })
@@ -120,6 +120,21 @@ describe('per-level pick (integration pin)', () => {
     expect(pickHiddenTubes(100, realTubes(100))).toEqual([
       4, 6, 3, 8, 12, 2, 13, 7, 11, 9, 0, 10,
     ])
+  })
+
+  it('still counts the late padlock as a ? vial once it is sealed', () => {
+    // Ticket 22 pads a coloured spare with `open: 0`. Sealing keeps its colour,
+    // so it stays a hidden candidate — never excluded for holding a padlock.
+    for (const level of [CLIMB_FROM, 100]) {
+      const { board, solution } = generateLevel(level)
+      const sealed = sealSpares(createGame(board), solution, level).tubes
+      const lock = sealed.findIndex((tube) => tube.open === 0)
+      expect(lock, `level ${level} lock`).toBeGreaterThanOrEqual(0)
+      expect(sealed[lock].colors.length, `level ${level} lock holds colour`).toBeGreaterThan(1)
+
+      const picks = pickHiddenTubes(level, sealed)
+      if (level === 100) expect(picks, 'all twelve candidates hide').toContain(lock)
+    }
   })
 
   it('hides every candidate at level 100, including the lockable spare', () => {

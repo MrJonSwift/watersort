@@ -74,6 +74,16 @@ describe('tubeAria', () => {
     )
   })
 
+  it('counts concealed blocks on a sealed coloured vial too (ticket 22)', () => {
+    expect(tubeAria({ colors: [1, 2, 3, 4], open: 0, hidden: 3 }, 12, 4)).toBe(
+      'Tube 13, sealed, tap to open a slot, 3 hidden',
+    )
+    // An empty sealed spare still reads exactly as it did before the change.
+    expect(tubeAria({ colors: [], open: 0, hidden: 0 }, 1, 4)).toBe(
+      'Tube 2, sealed, tap to open a slot',
+    )
+  })
+
   it('names concealed blocks by count and never by colour (ticket 10)', () => {
     expect(tubeAria({ colors: [1, 2, 3, 4], hidden: 3 }, 0, 4)).toBe(
       'Tube 1, 4 of 4 filled, 3 hidden',
