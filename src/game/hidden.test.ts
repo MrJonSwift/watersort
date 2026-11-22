@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { pickHiddenTubes } from './hidden'
-import { CLIMB_FROM, HIDDEN_FROM, hiddenTubeCount } from './levels'
+import { CLIMB_FROM, HIDDEN_FROM, MAX_LEVEL, hiddenTubeCount } from './levels'
 import { generateLevel } from './generator'
-import { createGame, sealSpares } from './state'
+import { createGame, hideBlocks, sealSpares } from './state'
 import type { Tube } from './types'
 
 const tube = (...colors: number[]): Tube => ({ colors })
@@ -120,6 +120,28 @@ describe('per-level pick (integration pin)', () => {
     expect(pickHiddenTubes(100, realTubes(100))).toEqual([
       4, 6, 3, 8, 12, 2, 13, 7, 11, 9, 0, 10,
     ])
+  })
+
+  it('hosts every configured vial on every climb level, with its top revealed', () => {
+    // The four anchors above pin the hash picks; this closes the content gate
+    // over the whole tier: no level may ask for more concealed vials than its
+    // board can supply, and every pick must leave a seen top above its secrets.
+    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+      const tubes = realTubes(level)
+      const picks = pickHiddenTubes(level, tubes)
+      expect(picks, `level ${level} host count`).toHaveLength(hiddenTubeCount(level))
+      for (const index of picks) {
+        // More than one unit guarantees a revealed top plus at least one
+        // hidden block; a one-unit tube would conceal nothing (ticket 13).
+        expect(tubes[index].colors.length, `level ${level} tube ${index} units`).toBeGreaterThan(1)
+      }
+      const concealed = hideBlocks(createGame(tubes.map((t) => [...t.colors])), picks)
+      for (const index of picks) {
+        expect(concealed.tubes[index].hidden, `level ${level} tube ${index} hidden`).toBe(
+          concealed.tubes[index].colors.length - 1,
+        )
+      }
+    }
   })
 
   it('still counts the late padlock as a ? vial once it is sealed', () => {
