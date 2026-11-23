@@ -407,10 +407,9 @@ describe('undo budget', () => {
   })
 
   it('play again from the last level restores the budget', () => {
-    // Two empty spares keep the coloured tubes off the ticket-22 lock: at the
-    // last level the first unused spare is padded, so a two-tube board would
-    // seal both sources and leave no pour to undo.
-    const h = harness([[1, 1], [1, 1], [], []], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
+    // At the last level the appended empty spare is the only lock, so both
+    // colour tubes stay open and a pour/undo is available.
+    const h = harness([[1, 1], [1, 1]], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
     h.controller.start()
     h.controller.tap(0)
     h.controller.tap(1)

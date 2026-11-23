@@ -75,7 +75,7 @@ function replay(level: Level): GameState {
  */
 function replaySealed(level: Level): GameState {
   // The pre-climb rule: this helper checks the generator's own invariant. The
-  // ticket-22 coloured seal is asserted against real 51+ boards below.
+  // appended-empty seal on real 51+ boards is asserted separately below.
   return replayMoves(
     sealSpares(createGame(level.board), level.solution, CLIMB_FROM - 1),
     level,

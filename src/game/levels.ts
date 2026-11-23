@@ -86,22 +86,21 @@ export const MAX_LEVEL = 100
 /** The first derived level. Everything up to 40 is the validated hand-tuned curve. */
 export const EXPERT_FROM = 41
 
-/** Colours at the start of the derived tier, and how often the count steps up. */
-const EXPERT_BASE_COLORS = 11
-const EXPERT_COLOR_STEP_LEVELS = 5
 /**
- * The playable colour ceiling from level 46 (ticket 24, decision 25). `palette`
- * still defines a twelfth swatch, but it never appears on a board that can host
- * the appended spare: at 11 colours the generated board is 13 tubes, so the
+ * The playable colour ceiling (ticket 24, decision 25). The derived tier has
+ * held 11 colours since ticket 19; ticket 24 makes 11 the final ceiling too, so
+ * the twelfth `palette` swatch never appears on a board that can host the
+ * appended spare: at 11 colours the generated board is 13 tubes, so the
  * appended empty spare fits under the 14-tube ceiling and can carry the padlock
  * while a plain empty spare stays a solution destination.
  */
 const EXPERT_MAX_COLORS = 11
 
 /**
- * Scramble formula for the derived tier: 38, 42, 46, 50, 54, repeating.
- * The new colour is the step at a tier boundary, so the cycle starts below the
- * hand-tuned tier's last scramble (40) — the same rule the earlier tiers use.
+ * Scramble formula for the derived tier: 38, 42, 46, 50, 54, repeating. The
+ * cycle restarts at each five-level boundary, including 46 after the colour
+ * ceiling stops stepping; the ramp past 50 is concealment, not a longer
+ * scramble.
  */
 const EXPERT_BASE_SCRAMBLE = 38
 const EXPERT_SCRAMBLE_STEP = 4
@@ -231,11 +230,11 @@ export function clampLevel(level: number): number {
  * Config for a level number, clamped into `1..MAX_LEVEL`.
  *
  * Levels 1–40 are the validated hand-tuned table. From `EXPERT_FROM` the
- * config is derived from the level number: colours step up to the playable
- * ceiling (11 from level 46, ticket 24), while the scramble cycles through a
- * rising five-step pattern. From `CLIMB_FROM` that cycle stops at the gate's
- * scramble ceiling and the level is fixed at 11 colours and two spares — the
- * back-loaded climb is carried by concealment. The derivation is pure and
+ * config is derived from the level number: colours hold at the playable
+ * ceiling of 11, while the scramble cycles through a rising five-step pattern
+ * and restarts every five levels. From `CLIMB_FROM` that cycle stops at the
+ * gate's scramble ceiling and the level is fixed at 11 colours and two spares —
+ * the back-loaded climb is carried by concealment. The derivation is pure and
  * deterministic, so the same level always makes the same board, and raising
  * `MAX_LEVEL` is all that is needed to add more levels.
  *
@@ -254,11 +253,7 @@ export function levelConfig(level: number): LevelConfig {
   }
 
   const since = safe - EXPERT_FROM
-  const colors = Math.min(
-    EXPERT_MAX_COLORS,
-    EXPERT_BASE_COLORS + Math.floor(since / EXPERT_COLOR_STEP_LEVELS),
-  )
   const scramble =
     EXPERT_BASE_SCRAMBLE + (since % EXPERT_SCRAMBLE_CYCLE) * EXPERT_SCRAMBLE_STEP
-  return { colors, emptyTubes: EXPERT_EMPTY_TUBES, scramble }
+  return { colors: EXPERT_MAX_COLORS, emptyTubes: EXPERT_EMPTY_TUBES, scramble }
 }

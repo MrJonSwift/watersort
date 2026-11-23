@@ -87,10 +87,10 @@ describe('levels', () => {
     expect(levelConfig(MAX_LEVEL + 10)).toEqual(levelConfig(MAX_LEVEL)) // clamped
   })
 
-  it('steps the expert tier up to the phone ceiling, then holds it for the climb', () => {
+  it('holds the expert tier at eleven colours, then fixes the climb scramble', () => {
     for (let level = EXPERT_FROM; level < CLIMB_FROM; level++) {
       const config = levelConfig(level)
-      // The playable ceiling is 11 from level 41; the scramble cycle continues.
+      // 41–45 already sat at 11; 46 is where the ceiling binds for good.
       expect(config.colors, `level ${level}`).toBe(11)
       expect(config.scramble, `level ${level}`).toBe(38 + ((level - EXPERT_FROM) % 5) * 4)
       expect(config.emptyTubes, `level ${level}`).toBe(2)
