@@ -29,20 +29,23 @@ const CURVE = [
   '9/2/22', '9/2/26', '9/2/30', '9/2/34', '9/2/38',
   '10/2/24', '10/2/28', '10/2/32', '10/2/36', '10/2/40',
   '11/2/38', '11/2/42', '11/2/46', '11/2/50', '11/2/54',
-  '12/2/38', '12/2/42', '12/2/46', '12/2/50', '12/2/54',
+  // Ticket 24: the playable ceiling drops to 11 colours from level 46 so the
+  // appended spare is genuinely empty and can carry the padlock. 46–50 repeat
+  // the five-step scramble cycle at 11 colours; 1–45 are unchanged.
+  '11/2/38', '11/2/42', '11/2/46', '11/2/50', '11/2/54',
   // The back-loaded climb (ticket 21). Scramble holds at the unchanged gate's
   // ceiling — ticket 20 found 78 passes only 11/50 and 82+ passes 0/50 — so
   // concealment, not a longer scramble, is the ramp. Every token is pinned.
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
-  '12/2/54', '12/2/54', '12/2/54', '12/2/54', '12/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
+  '11/2/54', '11/2/54', '11/2/54', '11/2/54', '11/2/54',
 ]
 
 /** The level that first adds a colour, and the tubes it starts with. */
@@ -56,7 +59,6 @@ const TIERS: Array<[level: number, tubes: number]> = [
   [31, 11],
   [36, 12],
   [41, 13],
-  [46, 14],
 ]
 
 describe('levels', () => {
@@ -69,42 +71,42 @@ describe('levels', () => {
     expect(CURVE).toHaveLength(MAX_LEVEL)
     expect(CLIMB_FROM).toBe(51)
     expect(CLIMB_SCRAMBLE).toBe(54)
-    expect(LATE_BOARD_MIN_MULTI).toBe(12)
+    expect(LATE_BOARD_MIN_MULTI).toBe(11)
   })
 
   it('derives levels past the table from the level number', () => {
     expect(EXPERT_FROM).toBe(LEVELS.length + 1)
     expect(levelConfig(41)).toEqual({ colors: 11, emptyTubes: 2, scramble: 38 })
     expect(levelConfig(45)).toEqual({ colors: 11, emptyTubes: 2, scramble: 54 })
-    expect(levelConfig(46)).toEqual({ colors: 12, emptyTubes: 2, scramble: 38 })
-    expect(levelConfig(50)).toEqual({ colors: 12, emptyTubes: 2, scramble: 54 })
+    // Ticket 24: 11 colours from 46, so the appended spare is empty.
+    expect(levelConfig(46)).toEqual({ colors: 11, emptyTubes: 2, scramble: 38 })
+    expect(levelConfig(50)).toEqual({ colors: 11, emptyTubes: 2, scramble: 54 })
     // The climb starts where level 50 ended and never grows the board.
-    expect(levelConfig(51)).toEqual({ colors: 12, emptyTubes: 2, scramble: 54 })
-    expect(levelConfig(100)).toEqual({ colors: 12, emptyTubes: 2, scramble: 54 })
+    expect(levelConfig(51)).toEqual({ colors: 11, emptyTubes: 2, scramble: 54 })
+    expect(levelConfig(100)).toEqual({ colors: 11, emptyTubes: 2, scramble: 54 })
     expect(levelConfig(MAX_LEVEL + 10)).toEqual(levelConfig(MAX_LEVEL)) // clamped
   })
 
   it('steps the expert tier up to the phone ceiling, then holds it for the climb', () => {
     for (let level = EXPERT_FROM; level < CLIMB_FROM; level++) {
       const config = levelConfig(level)
-      const expectedColors = Math.min(12, 11 + Math.floor((level - EXPERT_FROM) / 5))
-      const expectedScramble = 38 + ((level - EXPERT_FROM) % 5) * 4
-      expect(config.colors, `level ${level}`).toBe(expectedColors)
-      expect(config.scramble, `level ${level}`).toBe(expectedScramble)
+      // The playable ceiling is 11 from level 41; the scramble cycle continues.
+      expect(config.colors, `level ${level}`).toBe(11)
+      expect(config.scramble, `level ${level}`).toBe(38 + ((level - EXPERT_FROM) % 5) * 4)
       expect(config.emptyTubes, `level ${level}`).toBe(2)
-      // The colour count and the two spares together never outgrow two rows.
-      expect(config.colors + config.emptyTubes).toBeLessThanOrEqual(MAX_TWO_ROW_TUBES)
+      // Generated tubes leave room for the appended spare under two rows.
+      expect(config.colors + config.emptyTubes).toBeLessThan(MAX_TWO_ROW_TUBES)
     }
     for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
       const config = levelConfig(level)
-      expect(config.colors, `level ${level}`).toBe(12)
+      expect(config.colors, `level ${level}`).toBe(11)
       expect(config.scramble, `level ${level}`).toBe(CLIMB_SCRAMBLE)
       expect(config.emptyTubes, `level ${level}`).toBe(2)
-      expect(config.colors + config.emptyTubes).toBe(MAX_TWO_ROW_TUBES)
+      expect(config.colors + config.emptyTubes + 1).toBe(MAX_TWO_ROW_TUBES)
     }
   })
 
-  it('climbs concealment back-loaded from 3 to 12, derived from the level', () => {
+  it('climbs concealment back-loaded from 3 to 11, derived from the level', () => {
     expect(hiddenTubeCount(40)).toBe(2)
     expect(hiddenTubeCount(EXPERT_FROM)).toBe(3)
     expect(hiddenTubeCount(50)).toBe(3)
@@ -112,8 +114,8 @@ describe('levels', () => {
     expect(hiddenTubeCount(51)).toBe(3)
     expect(hiddenTubeCount(70)).toBe(5)
     expect(hiddenTubeCount(85)).toBe(9)
-    expect(hiddenTubeCount(100)).toBe(12)
-    expect(hiddenTubeCount(MAX_LEVEL)).toBe(12)
+    expect(hiddenTubeCount(100)).toBe(11)
+    expect(hiddenTubeCount(MAX_LEVEL)).toBe(11)
 
     let previous = hiddenTubeCount(50)
     for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
@@ -145,13 +147,26 @@ describe('levels', () => {
   })
 
   it('raises the scramble within a colour tier up to the gate ceiling', () => {
-    // Through level 50 each tier starts below the last and rises level by level.
-    // From 51 the climb holds at the ceiling: raising it further re-rolls most
-    // boards against the unchanged gate (ticket 20), so it stops here.
-    for (let level = 2; level < CLIMB_FROM; level++) {
+    // The hand-tuned tiers start below the last and rise level by level.
+    for (let level = 2; level <= LEVELS.length; level++) {
       const current = levelConfig(level)
       const previous = levelConfig(level - 1)
       if (current.colors === previous.colors) {
+        expect(current.scramble, `level ${level}`).toBeGreaterThan(previous.scramble)
+      }
+    }
+    // The derived tier has no colour step left at 46 (ticket 24), so it runs
+    // the same five-step cycle twice — 38…54 — restarting at 46 rather than
+    // raising the scramble past the gate's ceiling. From 51 the climb holds.
+    for (let level = EXPERT_FROM; level < CLIMB_FROM; level++) {
+      const current = levelConfig(level)
+      const previous = levelConfig(level - 1)
+      expect(current.scramble, `level ${level}`).toBe(38 + ((level - EXPERT_FROM) % 5) * 4)
+      if ((level - EXPERT_FROM) % 5 === 0) {
+        expect(current.scramble, `level ${level} restarts the cycle`).toBeLessThan(
+          previous.scramble,
+        )
+      } else {
         expect(current.scramble, `level ${level}`).toBeGreaterThan(previous.scramble)
       }
     }

@@ -90,8 +90,9 @@ export function tubeAria(tube: Tube, index: number, capacity: number): string {
   const concealed = tube.hidden ?? 0
   const hiddenNote = concealed > 0 ? `, ${concealed} hidden` : ''
   if (open >= capacity) return `${base}, ${tube.colors.length} of ${capacity} filled${hiddenNote}`
-  // Ticket 22: the late padlock is also a concealed vial, so a screen reader
-  // still hears the hidden count — a count, never a colour name.
+  // The hidden note is a count, never a colour name. A sealed spare can also
+  // carry concealed blocks if a caller ever composes the two; the late padlock
+  // itself is an empty spare and hides nothing (ticket 24).
   if (open === 0) return `${base}, sealed, tap to open a slot${hiddenNote}`
   return tube.colors.length > 0
     ? `${base}, ${open} of ${capacity} slots open, ${tube.colors.length} filled${hiddenNote}${

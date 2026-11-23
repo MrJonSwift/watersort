@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { pickHiddenTubes } from './hidden'
 import { CLIMB_FROM, HIDDEN_FROM, MAX_LEVEL, hiddenTubeCount } from './levels'
 import { generateLevel } from './generator'
-import { createGame, hideBlocks, sealSpares } from './state'
+import { addExtraSpare, createGame, hideBlocks, sealSpares } from './state'
 import type { Tube } from './types'
 
 const tube = (...colors: number[]): Tube => ({ colors })
@@ -27,16 +27,16 @@ describe('hiddenTubeCount', () => {
     expect(hiddenTubeCount(50)).toBe(3)
   })
 
-  it('climbs back-loaded through the anchors, monotonic and never above 12', () => {
+  it('climbs back-loaded through the anchors, monotonic and never above 11', () => {
     expect(hiddenTubeCount(51)).toBe(3)
     expect(hiddenTubeCount(70)).toBe(5)
     expect(hiddenTubeCount(85)).toBe(9)
-    expect(hiddenTubeCount(100)).toBe(12)
+    expect(hiddenTubeCount(100)).toBe(11)
     let previous = hiddenTubeCount(50)
     for (let level = 51; level <= 100; level++) {
       const count = hiddenTubeCount(level)
       expect(count, `level ${level}`).toBeGreaterThanOrEqual(previous)
-      expect(count, `level ${level}`).toBeLessThanOrEqual(12)
+      expect(count, `level ${level}`).toBeLessThanOrEqual(11)
       previous = count
     }
   })
@@ -106,19 +106,20 @@ describe('per-level pick (integration pin)', () => {
     // on a spare. The appended extra spare is empty, so it cannot be picked.
     expect(pickHiddenTubes(41, realTubes(41))).toEqual([8, 11, 5])
     expect(pickHiddenTubes(45, realTubes(45))).toEqual([12, 6, 9])
-    expect(pickHiddenTubes(46, realTubes(46))).toEqual([1, 6, 4])
-    expect(pickHiddenTubes(50, realTubes(50))).toEqual([6, 8, 7])
+    // Ticket 24 re-rolls 46 as the first 11-colour level; the picks move with it.
+    expect(pickHiddenTubes(46, realTubes(46))).toEqual([6, 4, 3])
+    expect(pickHiddenTubes(50, realTubes(50))).toEqual([8, 2, 6])
   })
 
   it('pins the picks at each anchor of the climb', () => {
-    // Four anchors of the derived 3→12 schedule. The whole range is monotonic
+    // Four anchors of the derived 3→11 schedule. The whole range is monotonic
     // and hostable (pinned in levels.test.ts); these pin the hash picks on the
     // actual boards so a generator change cannot silently move them.
-    expect(pickHiddenTubes(51, realTubes(51))).toEqual([0, 3, 9])
-    expect(pickHiddenTubes(70, realTubes(70))).toEqual([8, 4, 13, 1, 6])
-    expect(pickHiddenTubes(85, realTubes(85))).toEqual([6, 13, 9, 7, 11, 1, 8, 10, 5])
+    expect(pickHiddenTubes(51, realTubes(51))).toEqual([5, 9, 8])
+    expect(pickHiddenTubes(70, realTubes(70))).toEqual([6, 12, 7, 9, 5])
+    expect(pickHiddenTubes(85, realTubes(85))).toEqual([7, 1, 4, 11, 8, 2, 12, 3, 9])
     expect(pickHiddenTubes(100, realTubes(100))).toEqual([
-      4, 6, 3, 8, 12, 2, 13, 7, 11, 9, 0, 10,
+      11, 7, 2, 6, 10, 4, 12, 1, 9, 0, 3,
     ])
   })
 
@@ -144,34 +145,35 @@ describe('per-level pick (integration pin)', () => {
     }
   })
 
-  it('still counts the late padlock as a ? vial once it is sealed', () => {
-    // Ticket 22 pads a coloured spare with `open: 0`. Sealing keeps its colour,
-    // so it stays a hidden candidate — never excluded for holding a padlock.
+  it('never hides the late padlock: it is an empty spare', () => {
+    // Ticket 24: from level 51 the padlock sits on the empty appended spare,
+    // which has nothing to conceal, so it is never a candidate nor a ? vial.
     for (const level of [CLIMB_FROM, 100]) {
       const { board, solution } = generateLevel(level)
-      const sealed = sealSpares(createGame(board), solution, level).tubes
-      const lock = sealed.findIndex((tube) => tube.open === 0)
-      expect(lock, `level ${level} lock`).toBeGreaterThanOrEqual(0)
-      expect(sealed[lock].colors.length, `level ${level} lock holds colour`).toBeGreaterThan(1)
+      const withSpare = addExtraSpare(createGame(board))
+      const appended = withSpare.tubes.length - 1
+      const sealed = sealSpares(withSpare, solution, level, appended).tubes
+      expect(sealed[appended], `level ${level} lock`).toEqual({ colors: [], open: 0 })
 
       const picks = pickHiddenTubes(level, sealed)
-      if (level === 100) expect(picks, 'all twelve candidates hide').toContain(lock)
+      expect(picks, `level ${level} lock is not hidden`).not.toContain(appended)
+      for (const index of picks) {
+        expect(sealed[index].colors.length, `level ${level} pick ${index} holds colour`).toBeGreaterThan(1)
+      }
     }
   })
 
-  it('hides every candidate at level 100, including the lockable spare', () => {
+  it('hides all eleven colour tubes at level 100', () => {
     const level = generateLevel(100)
     const tubes = level.board.map((colors) => ({ colors }))
-    const used = new Set(level.solution.map((move) => move.to))
     const candidates = tubes.filter((tube) => tube.colors.length > 1)
-    expect(candidates).toHaveLength(12)
+    expect(candidates).toHaveLength(11)
 
     const picks = pickHiddenTubes(100, tubes)
-    expect(picks).toHaveLength(12)
-    expect(new Set(picks).size).toBe(12)
-    // Do not exclude the spare ticket 22 pads: it is one of the twelve ? vials.
-    expect(picks.some((index) => (index === 12 || index === 13) && !used.has(index))).toBe(
-      true,
-    )
+    expect(picks).toHaveLength(11)
+    expect(new Set(picks).size).toBe(11)
+    // The appended spare is not part of the generated board, and an empty tube
+    // can conceal nothing, so every pick is a colour-bearing vial.
+    expect(picks.every((index) => tubes[index].colors.length > 1)).toBe(true)
   })
 })

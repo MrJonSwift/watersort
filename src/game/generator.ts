@@ -205,8 +205,9 @@ interface Search {
 /**
  * Ticket 20's shape rule for the back-loaded climb. A gate-passing board is
  * only accepted from level 51 when one of its two generated spares is never a
- * solution destination (ticket 22 can padlock it) and at least twelve tubes
- * hold two or more units (level 100's twelve concealed vials all have a home).
+ * solution destination and at least eleven tubes hold two or more units (level
+ * 100's eleven concealed vials all have a home; the empty appended spare can
+ * conceal nothing).
  *
  * This is a filter on which seed `search` returns, not a change to the reverse
  * moves or the quality gate. Levels 1–50 never call it, so their boards,

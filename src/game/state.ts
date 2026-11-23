@@ -1,4 +1,4 @@
-import { CLIMB_FROM, levelConfig } from './levels'
+import { CLIMB_FROM } from './levels'
 import { DEFAULT_CAPACITY, canGrow, canPour, openSlots, pour } from './rules'
 import type { ColorId, GameState, Move } from './types'
 
@@ -30,45 +30,47 @@ export function createGame(
  * because the solution never pours into a sealed tube, replaying it unchanged
  * wins with the sealed set held at `open = 0` forever.
  *
- * The generator scrambles into the spares, so a "spare" is not a fixed index:
- * it is whichever tube is empty on this board. An empty the solution pours
- * into (it is a `to` in any recorded move) stays fully open and is never
- * locked — sealing it would put a toll on the solution path. If the solution
- * uses every empty, no tube is sealed at all; that is recorded, deliberate,
- * and preferable to re-rolling a board people have already played.
+ * Below the climb the generator scrambles into the spares, so a "spare" is not
+ * a fixed index: it is whichever tube is empty on this board. An empty the
+ * solution pours into (it is a `to` in any recorded move) stays fully open and
+ * is never locked — sealing it would put a toll on the solution path. If the
+ * solution uses every empty, no tube is sealed at all; that is recorded,
+ * deliberate, and preferable to re-rolling a board people have already played.
  *
- * Tubes holding colours never carry `open` below the climb; rules never read
- * the solution.
- *
- * Ticket 22 extends the rule from `CLIMB_FROM`: the generator guarantees at
- * least one solution-unused spare (index 12 or 13) that is *full of colour*, so
- * from that level the first unused spare is sealed even when it holds colour —
- * only one, so a second unused spare stays plain. Its colour is kept, the
- * padlocks frost the top slots, and `open = 0` still means nothing can pour in
- * until a question is answered. It stays a valid source: the validated
- * solution pours *out* of it, so a question-free win is untouched.
- * Gating on the level is what keeps 1–50 byte-for-byte frozen.
+ * From `CLIMB_FROM` the target is fixed (ticket 24, superseding ticket 22's
+ * coloured padding): the caller passes the index of the appended spare, the
+ * empty tube the controller adds after generation. It is never a solution
+ * destination, so winding it shut keeps the level winnable without a question,
+ * and unlocking it reveals an empty tube — never colour or "?". The generated
+ * spares stay plain, so one remains a working empty. A climb board with no
+ * appended index is returned untouched: the lock comes from the append, not
+ * from the generator. Levels 1–50 keep the empty-only path above, which is
+ * what leaves their boards byte-for-byte frozen.
  */
 export function sealSpares(
   state: GameState,
   solution: readonly Move[],
   level: number,
+  appendedSpare?: number,
 ): GameState {
   const used = new Set(solution.map((move) => move.to))
-  const spareStart = state.tubes.length - levelConfig(level).emptyTubes
-  // Some climb boards leave both generated spares unused. Ticket 22 pads
-  // exactly one — the first — so the other stays a plain escape hatch.
-  const lockIndex =
-    level >= CLIMB_FROM
-      ? state.tubes.findIndex((_, index) => index >= spareStart && !used.has(index))
-      : -1
+
+  if (level >= CLIMB_FROM) {
+    if (appendedSpare === undefined) return state
+    const tube = state.tubes[appendedSpare]
+    if (!tube || tube.colors.length > 0 || used.has(appendedSpare)) return state
+    return {
+      ...state,
+      tubes: state.tubes.map((t, index) =>
+        index === appendedSpare ? { ...t, colors: [], open: 0 } : t,
+      ),
+    }
+  }
+
   return {
     ...state,
     tubes: state.tubes.map((tube, index) => {
       if (used.has(index)) return tube
-      if (index === lockIndex) {
-        return { ...tube, colors: [...tube.colors], open: 0 }
-      }
       return tube.colors.length === 0 ? { ...tube, colors: [], open: 0 } : tube
     }),
   }
@@ -89,9 +91,9 @@ export function addExtraSpare(state: GameState): GameState {
  * Grow a spare by one open slot — the reward a correct gate answer grants.
  * Pure: only a spare with room to grow changes. Since ticket 15 a spare may
  * keep growing while it holds colour; the new slot opens above what is poured.
- * Concealment rides along untouched (ticket 22): a vial that is both padded
- * and concealed stays concealed when a block is earned. Ordinary and fully
- * open tubes are untouched.
+ * The tube is copied with a spread, so a concealment count would ride along
+ * untouched if the two policies were ever composed. Ordinary and fully open
+ * tubes are untouched.
  */
 export function growBlock(state: GameState, index: number): GameState {
   const tube = state.tubes[index]
@@ -113,9 +115,10 @@ export function growBlock(state: GameState, index: number): GameState {
  * of sealed spares.
  *
  * Since ticket 13 the top unit is always seen: a hidden tube of N units
- * conceals N−1 of them, so a one-unit tube hides nothing. A padlock survives
- * the pass (ticket 22): from the climb the concealed vial can also be a sealed
- * spare, so its `open` count is carried through.
+ * conceals N−1 of them, so a one-unit tube hides nothing. The tube is copied
+ * with a spread, so an `open` count would survive the pass if a sealed tube
+ * were ever concealed — but the climb's padlock is an empty spare, which can
+ * hide nothing (ticket 24).
  */
 export function hideBlocks(state: GameState, indices: readonly number[]): GameState {
   const picked = new Set(indices)

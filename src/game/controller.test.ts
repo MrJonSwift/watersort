@@ -1009,8 +1009,9 @@ describe('guaranteed spare (ticket 18)', () => {
   })
 
   it('skips the extra spare once the board fills two rows (ticket 19)', () => {
-    // A 15th tube would force a third row on a 360px phone. The 12-colour tier
-    // is already 14 tubes, so it keeps its two spares and its extra colours.
+    // A 15th tube would force a third row on a 360px phone. Any board already
+    // at the 14-tube ceiling keeps its generated tubes; the 11-colour tier is
+    // 13 tubes, so it has room and gets the appended spare (ticket 24).
     const full = Array.from({ length: 14 }, (_, i) => [i % 4, i % 4])
     const h = harness(full, {}, { level: 46, highest: 46 })
     h.controller.start()
@@ -1018,7 +1019,7 @@ describe('guaranteed spare (ticket 18)', () => {
     expect(h.controller.state.tubes.every((t) => t.open === undefined)).toBe(true)
 
     const roomy = Array.from({ length: 13 }, (_, i) => [i % 4, i % 4])
-    const h2 = harness(roomy, {}, { level: 41, highest: 41 })
+    const h2 = harness(roomy, {}, { level: 46, highest: 46 })
     h2.controller.start()
     expect(h2.controller.state.tubes).toHaveLength(14)
     expect(h2.controller.state.tubes.at(-1)?.open).toBe(0)
@@ -1032,9 +1033,9 @@ describe('guaranteed spare (ticket 18)', () => {
   })
 })
 
-describe('late coloured lock (ticket 22)', () => {
-  // The real level-51 board: 12 colours plus two generated spares already fill
-  // 14 tubes, so no extra spare is appended and the spare indices are 12/13.
+describe('appended empty lock (ticket 24)', () => {
+  // The real level-51 board: 11 colours plus two generated spares = 13 tubes.
+  // The controller appends the guaranteed empty 14th, and that is the padlock.
   const level = generateLevel(CLIMB_FROM)
   const board = level.board
   const solution = level.solution
@@ -1045,25 +1046,22 @@ describe('late coloured lock (ticket 22)', () => {
     return h
   }
 
-  it('pads a solution-unused coloured spare from level 51, not below', () => {
-    const before = harness(
-      board,
-      {},
-      { level: CLIMB_FROM - 1, highest: CLIMB_FROM - 1 },
-      undefined,
-      solution,
-    )
-    before.controller.start()
-    expect(before.controller.state.tubes.some((t) => t.open === 0)).toBe(false)
-
+  it('seals exactly the appended empty spare from level 51', () => {
     const h = startLate()
     expect(h.controller.state.tubes).toHaveLength(14)
     const locks = h.controller.state.tubes
       .map((tube, index) => ({ tube, index }))
       .filter(({ tube }) => tube.open === 0)
     expect(locks).toHaveLength(1)
-    expect(locks[0].index).toBeGreaterThanOrEqual(12)
-    expect(locks[0].tube.colors.length).toBeGreaterThanOrEqual(2)
+    expect(locks[0].index).toBe(13)
+    expect(locks[0].tube).toEqual({ colors: [], open: 0 })
+
+    // A plain empty remains and the solution uses it, so no question is needed.
+    const plain = h.controller.state.tubes
+      .map((tube, index) => ({ tube, index }))
+      .filter(({ tube }) => tube.colors.length === 0 && tube.open === undefined)
+    expect(plain.length).toBeGreaterThanOrEqual(1)
+    expect(plain.some(({ index }) => solution.some((move) => move.to === index))).toBe(true)
   })
 
   it('wins by replaying the solution with the lock shut and no gate', () => {
@@ -1076,29 +1074,29 @@ describe('late coloured lock (ticket 22)', () => {
     }
 
     expect(h.controller.state.won).toBe(true)
-    expect(h.controller.state.tubes[lock]).toMatchObject({ colors: [], open: 0 })
+    expect(h.controller.state.tubes[lock]).toEqual({ colors: [], open: 0 })
     expect(h.challengeShows).toEqual([])
     expect(h.rewards).toEqual([])
   })
 
-  it('the coloured padlock opens the gate one block at a time', () => {
+  it('the padlock opens the gate one block at a time on an empty tube', () => {
     const h = startLate()
     const lock = h.controller.state.tubes.findIndex((t) => t.open === 0)
-    const colour = h.controller.state.tubes[lock].colors
+    expect(h.controller.state.tubes[lock].colors).toEqual([])
 
     h.controller.tapPadlock(lock)
     for (let i = 0; i < 8; i++) h.controller.tapPadlock(lock) // rapid taps draw once
     expect(h.rewards).toEqual([{ kind: 'grow', tube: lock }])
     h.controller.answer(h.challengeShows[0].answer)
-    expect(h.controller.state.tubes[lock]).toEqual({ colors: colour, open: 1 })
+    expect(h.controller.state.tubes[lock]).toEqual({ colors: [], open: 1 })
 
     // Colour inside is not a barrier to coming back for another block.
     h.controller.tapPadlock(lock)
     h.controller.answer(h.challengeShows.at(-1)!.answer)
-    expect(h.controller.state.tubes[lock]).toEqual({ colors: colour, open: 2 })
+    expect(h.controller.state.tubes[lock]).toEqual({ colors: [], open: 2 })
   })
 
-  it('restart and next level reseal the coloured spare', () => {
+  it('restart and next level reseal the appended spare', () => {
     const restart = startLate()
     const lock = restart.controller.state.tubes.findIndex((t) => t.open === 0)
     restart.controller.tapPadlock(lock)
@@ -1115,7 +1113,7 @@ describe('late coloured lock (ticket 22)', () => {
     expect(next.controller.level).toBe(CLIMB_FROM + 1)
   })
 
-  it('level 100 hosts twelve question-mark vials and one of them is the padlock', () => {
+  it('level 100 hosts eleven question-mark vials and none is the empty lock', () => {
     const final = generateLevel(MAX_LEVEL)
     const h = harness(
       final.board,
@@ -1129,10 +1127,11 @@ describe('late coloured lock (ticket 22)', () => {
     const hidden = h.controller.state.tubes
       .map((tube, index) => ({ tube, index }))
       .filter(({ tube }) => (tube.hidden ?? 0) > 0)
-    expect(hidden).toHaveLength(12)
+    expect(hidden).toHaveLength(11)
     const lock = h.controller.state.tubes.findIndex((t) => t.open === 0)
-    expect(lock, 'a padlock survives the concealment pass').toBeGreaterThanOrEqual(0)
-    expect(hidden.some(({ index }) => index === lock)).toBe(true)
+    expect(lock, 'the appended empty spare carries the padlock').toBe(13)
+    expect(hidden.some(({ index }) => index === lock)).toBe(false)
+    expect(hidden.every(({ tube }) => tube.colors.length > 1)).toBe(true)
   })
 })
 
