@@ -10,7 +10,7 @@ import {
   type Reward,
   type UIView,
 } from './controller'
-import type { Challenge } from './challenges'
+import { CHALLENGES, type Challenge } from './challenges'
 import { generateLevel } from './generator'
 import { pickHiddenTubes } from './hidden'
 import { CLIMB_FROM, CLIMB_LAST, EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
@@ -55,6 +55,8 @@ function harness(
   progress: Partial<Progress> = {},
   startAt?: number,
   solution: Move[] = [],
+  /** The rotation store; share one between harnesses to simulate a reload. */
+  quiz: { position: number } = { position: 0 },
 ): Harness {
   const events: GameEvent[] = []
   const dispatched: GameState[] = []
@@ -126,6 +128,12 @@ function harness(
       load: () => ({ ...DEFAULT_PROGRESS, ...progress }),
       save(next) {
         savedProgress.push(next)
+      },
+    },
+    quiz: {
+      load: () => quiz.position,
+      save(next) {
+        quiz.position = next
       },
     },
     startAt,
@@ -528,6 +536,41 @@ describe('earn gate', () => {
     h.controller.answer(answered.answer)
     h.controller.earn() // the gate itself, as a later caller (ticket 09) would use it
     expect(h.challengeShows[2].prompt).not.toBe(answered.prompt)
+  })
+
+  it('the rotation survives a reload: no repeats across sessions within a pass', () => {
+    const store = { position: 0 }
+    const prompts: string[] = []
+    // Each "session" opens and dismisses a few gates, then the page reloads.
+    while (prompts.length < CHALLENGES.length) {
+      const h = harness([[1, 1], [1]], {}, {}, undefined, [], store)
+      h.controller.start()
+      for (let round = 0; round < 7 && prompts.length < CHALLENGES.length; round++) {
+        h.controller.earn()
+        prompts.push(h.challengeShows.at(-1)!.prompt)
+        h.controller.dismiss()
+      }
+    }
+    expect(new Set(prompts).size).toBe(CHALLENGES.length)
+    // The next session starts the second pass where the first one began.
+    const h = harness([[1, 1], [1]], {}, {}, undefined, [], store)
+    h.controller.start()
+    h.controller.earn()
+    expect(h.challengeShows[0].prompt).toBe(prompts[0])
+  })
+
+  it('a saved rotation position picks up where the last session stopped', () => {
+    const store = { position: 0 }
+    const first = harness([[1, 1], [1]], {}, {}, undefined, [], store)
+    first.controller.start()
+    first.controller.earn()
+    first.controller.dismiss()
+    expect(store.position).toBe(1)
+    const second = harness([[1, 1], [1]], {}, {}, undefined, [], store)
+    second.controller.start()
+    second.controller.earn()
+    expect(second.challengeShows[0].prompt).not.toBe(first.challengeShows[0].prompt)
+    expect(store.position).toBe(2)
   })
 
   it('the draw sequence is deterministic for the same session input', () => {

@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { advanceDraw, CHALLENGES, drawChallenge } from './challenges'
+import { PACK } from './challenge-pack'
+import { CHALLENGES, DRAW_ORDER, drawAt, normalisePosition } from './challenges'
 
-describe('the challenge pack', () => {
-  it('is a grown pack so a four-block unlock run never repeats', () => {
-    // Ticket 16 grew this from the original 6. Adding more content later is a
-    // content decision; the no-repeat tests below track the actual length.
-    expect(CHALLENGES.length).toBeGreaterThanOrEqual(20)
+/** The gate fits a 360×640 phone at these lengths (ticket 27 smoke). */
+const PROMPT_MAX = 110
+const OPTION_MAX = 28
+
+describe('the question pack', () => {
+  it('holds at least 280 questions across every planned topic', () => {
+    expect(CHALLENGES.length).toBeGreaterThanOrEqual(280)
+    const counts = Object.fromEntries(PACK.map((topic) => [topic.topic, topic.entries.length]))
+    expect(counts['Kings and queens']).toBeGreaterThanOrEqual(35)
+    expect(counts['Artificial intelligence']).toBeGreaterThanOrEqual(25)
+    for (const topic of PACK) expect(topic.entries.length, topic.topic).toBeGreaterThanOrEqual(10)
   })
 
   it('every prompt is unique', () => {
@@ -17,95 +24,83 @@ describe('the challenge pack', () => {
     for (const challenge of CHALLENGES) {
       expect(challenge.prompt.trim().length, challenge.prompt).toBeGreaterThan(0)
       expect(challenge.options, challenge.prompt).toHaveLength(4)
-      const unique = new Set(challenge.options)
-      expect(unique.size, challenge.prompt).toBe(challenge.options.length)
-      expect(Number.isInteger(challenge.answer), challenge.prompt).toBe(true)
-      expect(challenge.answer, challenge.prompt).toBeGreaterThanOrEqual(0)
-      expect(challenge.answer, challenge.prompt).toBeLessThan(challenge.options.length)
-    }
-  })
-
-  it('every option is a non-empty string', () => {
-    for (const challenge of CHALLENGES) {
+      expect(new Set(challenge.options).size, challenge.prompt).toBe(4)
       for (const option of challenge.options) {
         expect(option.trim().length, challenge.prompt).toBeGreaterThan(0)
       }
+      expect(Number.isInteger(challenge.answer), challenge.prompt).toBe(true)
+      expect(challenge.answer, challenge.prompt).toBeGreaterThanOrEqual(0)
+      expect(challenge.answer, challenge.prompt).toBeLessThan(4)
     }
+  })
+
+  it('the shown answer is the one written as correct in the pack', () => {
+    const entries = PACK.flatMap((topic) => topic.entries)
+    CHALLENGES.forEach((challenge, index) => {
+      expect(challenge.options[challenge.answer], challenge.prompt).toBe(entries[index][1])
+      expect([...challenge.options].sort(), challenge.prompt).toEqual([...entries[index].slice(1)].sort())
+    })
+  })
+
+  it('fits the gate: prompt and option length limits', () => {
+    for (const challenge of CHALLENGES) {
+      expect(challenge.prompt.length, challenge.prompt).toBeLessThanOrEqual(PROMPT_MAX)
+      for (const option of challenge.options) {
+        expect(option.length, `${challenge.prompt} → ${option}`).toBeLessThanOrEqual(OPTION_MAX)
+      }
+    }
+  })
+
+  it('spreads the answer evenly: each of A–D is between 20% and 30%', () => {
+    const slots = [0, 0, 0, 0]
+    for (const challenge of CHALLENGES) slots[challenge.answer]++
+    for (const [slot, count] of slots.entries()) {
+      const share = count / CHALLENGES.length
+      expect(share, `slot ${'ABCD'[slot]}`).toBeGreaterThanOrEqual(0.2)
+      expect(share, `slot ${'ABCD'[slot]}`).toBeLessThanOrEqual(0.3)
+    }
+  })
+
+  it('shows numeric options in ascending order', () => {
+    const years = CHALLENGES.find((c) => c.prompt === 'In which year was Magna Carta sealed?')!
+    expect(years.options).toEqual(['1066', '1215', '1265', '1314'])
+    expect(years.options[years.answer]).toBe('1215')
   })
 })
 
-describe('drawChallenge', () => {
-  it('is deterministic for the same seed and used list', () => {
-    expect(drawChallenge(3, [0, 2])).toEqual(drawChallenge(3, [0, 2]))
+describe('the rotation', () => {
+  it('the draw order is a permutation of the whole pack', () => {
+    expect([...DRAW_ORDER].sort((a, b) => a - b)).toEqual(CHALLENGES.map((_, index) => index))
   })
 
-  it('never draws a used challenge while fresh ones remain', () => {
+  it('mixes topics rather than serving the pack in order', () => {
+    const inOrder = DRAW_ORDER.filter((index, at) => index === at).length
+    expect(inOrder).toBeLessThan(CHALLENGES.length / 10)
+  })
+
+  it('a full pass shows every question once, then repeats in the same order', () => {
+    let position = 0
+    const drawn: number[] = []
+    for (let n = 0; n < CHALLENGES.length * 2; n++) {
+      const { draw, next } = drawAt(position)
+      expect(draw.challenge).toBe(CHALLENGES[draw.index])
+      drawn.push(draw.index)
+      position = next
+    }
     const total = CHALLENGES.length
-    for (let seed = 0; seed < total * 2; seed++) {
-      for (let usedIndex = 0; usedIndex < total; usedIndex++) {
-        const draw = drawChallenge(seed, [usedIndex])
-        expect(draw.index, `seed ${seed}, used [${usedIndex}]`).not.toBe(usedIndex)
-        expect(draw.challenge).toBe(CHALLENGES[draw.index])
-      }
+    for (let start = 0; start + total <= drawn.length; start++) {
+      expect(new Set(drawn.slice(start, start + total)).size, `window at ${start}`).toBe(total)
     }
+    expect(position).toBe(0)
   })
 
-  it('a session that records every draw keeps seeing new challenges', () => {
-    const seen: number[] = []
-    const prompts: string[] = []
-    for (let draw = 0; draw < CHALLENGES.length; draw++) {
-      const next = drawChallenge(draw, seen)
-      expect(seen, `draw ${draw}`).not.toContain(next.index)
-      seen.push(next.index)
-      prompts.push(next.challenge.prompt)
-    }
-    expect(new Set(prompts).size).toBe(CHALLENGES.length)
-  })
-
-  it('no question repeats within any window of one full pack', () => {
-    // A session carries the seen list forward and restarts the cycle when the
-    // pack is exhausted. Whatever the seed, every window of CHALLENGES.length
-    // consecutive draws is all-distinct — in particular the four draws of one
-    // vial's unlock run, and not just the first pass through the pack.
+  it('normalises any stored position', () => {
     const total = CHALLENGES.length
-    for (let seed = 0; seed < total; seed++) {
-      let used: number[] = []
-      const draws: number[] = []
-      for (let n = 0; n < total * 3; n++) {
-        const { draw, nextUsed } = advanceDraw(seed, used)
-        used = nextUsed
-        draws.push(draw.index)
-      }
-      for (let start = 0; start + total <= draws.length; start++) {
-        const window = draws.slice(start, start + total)
-        expect(new Set(window).size, `seed ${seed}, window at ${start}`).toBe(total)
-      }
+    expect(normalisePosition(5)).toBe(5)
+    expect(normalisePosition(total + 3)).toBe(3)
+    for (const bad of [-1, 1.5, Number.NaN, Infinity, '4', null, undefined, {}]) {
+      expect(normalisePosition(bad), String(bad)).toBe(0)
     }
-  })
-
-  it('a fresh cycle starts from the seed, then walks forward again', () => {
-    const total = CHALLENGES.length
-    let used: number[] = []
-    for (let n = 0; n < total; n++) {
-      used = advanceDraw(7, used).nextUsed
-    }
-    expect(used).toHaveLength(total)
-
-    const first = advanceDraw(7, used)
-    expect(first.draw.index).toBe(7 % total) // seed question restarts the cycle
-    expect(first.nextUsed).toEqual([7 % total])
-
-    const second = advanceDraw(7, first.nextUsed)
-    expect(second.draw.index).toBe((7 + 1) % total)
-    expect(new Set([first.draw.index, second.draw.index]).size).toBe(2)
-  })
-
-  it('recycles from the seed once every challenge has been seen', () => {
-    const allSeen = CHALLENGES.map((_, index) => index)
-    for (let seed = 0; seed < CHALLENGES.length; seed++) {
-      const draw = drawChallenge(seed, allSeen)
-      expect(draw.index).toBe(seed)
-      expect(draw.challenge).toBe(CHALLENGES[seed])
-    }
+    expect(drawAt(-7)).toEqual(drawAt(0))
   })
 })

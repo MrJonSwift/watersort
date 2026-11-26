@@ -15,7 +15,7 @@
  * No DOM and no canvas imports: every effect arrives through a port, which is
  * what makes a whole session testable with fakes.
  */
-import { advanceDraw, type Challenge } from './challenges'
+import { drawAt, type Challenge } from './challenges'
 import type { Level } from './generator'
 import { pickHiddenTubes } from './hidden'
 import {
@@ -110,6 +110,15 @@ export interface ControllerProgress {
   save(progress: Progress): void
 }
 
+/**
+ * Where the question rotation is kept (ticket 27): a single position that
+ * survives reloads. The controller draws at it and stores the next one.
+ */
+export interface ControllerQuiz {
+  load(): number
+  save(position: number): void
+}
+
 export interface ControllerPorts {
   ui: ControllerUI
   stage: ControllerStage
@@ -117,6 +126,7 @@ export interface ControllerPorts {
   haptic(pattern: number | number[]): void
   settings: ControllerSettings
   progress: ControllerProgress
+  quiz: ControllerQuiz
   /**
    * Start the session on this level instead of the saved one, for the
    * `?level=N` test shortcut. A valid `1..MAX_LEVEL` level, or omitted. The
@@ -225,8 +235,8 @@ export function createController(ports: ControllerPorts): Controller {
    * answer grants, decided by whichever affordance opened the gate.
    */
   let gate: { index: number; challenge: Challenge; reward: Reward } | null = null
-  /** Pack indices already offered this session; the pick skips them. */
-  let usedDraws: number[] = []
+  /** Position in the persisted question rotation; the next draw is here. */
+  let quizPosition = ports.quiz.load()
 
   /**
    * Build the board for a level, then apply the level's presentation
@@ -262,14 +272,15 @@ export function createController(ports: ControllerPorts): Controller {
   }
 
   /**
-   * The draw seed is the level number: deterministic per session input, no
-   * `Math.random`, and the sequence replays in tests. `usedDraws` carries the
-   * rest of the state.
+   * Each opening draws the next question in the rotation and stores the
+   * position straight away, so a dismissed or reloaded gate never shows the
+   * same question again until the whole pack has been seen.
    */
   function openGate(reward: Reward): void {
     if (gate) return
-    const { draw, nextUsed } = advanceDraw(level, usedDraws)
-    usedDraws = nextUsed
+    const { draw, next } = drawAt(quizPosition)
+    quizPosition = next
+    ports.quiz.save(next)
     gate = { ...draw, reward }
     ports.ui.showChallenge(draw.challenge, reward)
   }
@@ -401,7 +412,6 @@ export function createController(ports: ControllerPorts): Controller {
       // an orphaned dialog on screen.
       undoCredits = UNDO_CREDITS
       closeGate()
-      usedDraws = []
       ports.ui.update(state, settings, viewFor())
       ports.stage.setPrefs({ pourFx: settings.pourFx })
       ports.audio.setEnabled(settings.sound)

@@ -13,6 +13,7 @@ import { haptic, preventDoubleTapZoom } from './game/input'
 import { MAX_LEVEL } from './game/levels'
 import { applyPaletteToCss } from './game/palette'
 import { loadProgress, saveProgress } from './game/progress'
+import { loadRotation, saveRotation } from './game/rotation'
 import { parseLevelJump } from './game/query'
 import { loadSettings, saveSettings } from './game/settings'
 import { createUI } from './game/ui'
@@ -65,6 +66,7 @@ controller = createController({
   haptic,
   settings: { load: loadSettings, save: saveSettings },
   progress: { load: loadProgress, save: saveProgress },
+  quiz: { load: loadRotation, save: saveRotation },
   startAt: startAt ?? undefined,
   board: (level) => generateLevel(level),
 })
