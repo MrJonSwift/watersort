@@ -6,19 +6,27 @@
  */
 export type RGB = readonly [number, number, number]
 
+/**
+ * Re-picked in ticket 26 so no two colours are easily confused: every pair
+ * among the playable IDs 0–10 is at least ΔE2000 25 apart (closest 28.4), ID 11
+ * clears 25 against all of them, and the deuteranopia-simulated minimum is
+ * pinned in `palette.test.ts`. Hues are spread and lightness is spread too
+ * (deep blue vs light sky; lime vs the deep green). Boards store IDs, so the
+ * IDs keep their slots; the name beside each is only what it looks like.
+ */
 export const PALETTE: readonly RGB[] = [
-  [255, 77, 94], // 0 red
-  [61, 139, 255], // 1 blue
-  [23, 217, 158], // 2 teal
-  [255, 210, 63], // 3 yellow
-  [176, 108, 240], // 4 purple
-  [255, 127, 176], // 5 pink
-  [126, 217, 87], // 6 green
-  [255, 154, 61], // 7 orange
-  [64, 216, 255], // 8 cyan
-  [230, 70, 220], // 9 magenta
-  [150, 90, 50], // 10 brown
-  [100, 80, 200], // 11 indigo
+  [211, 25, 66], // 0 red
+  [0, 121, 215], // 1 blue
+  [15, 133, 129], // 2 teal
+  [255, 210, 11], // 3 yellow
+  [86, 0, 245], // 4 violet
+  [255, 145, 187], // 5 pink
+  [138, 217, 113], // 6 lime
+  [231, 121, 2], // 7 orange
+  [76, 219, 255], // 8 sky
+  [254, 253, 255], // 9 white
+  [123, 69, 0], // 10 brown
+  [54, 113, 2], // 11 deep green (reserved for ticket 28)
 ] as const
 
 export function rgbOf(id: number): RGB {
