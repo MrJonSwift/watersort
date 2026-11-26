@@ -13,7 +13,7 @@ import {
 import { CHALLENGES, type Challenge } from './challenges'
 import { generateLevel } from './generator'
 import { pickHiddenTubes } from './hidden'
-import { CLIMB_FROM, CLIMB_LAST, EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
+import { EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
@@ -634,23 +634,23 @@ describe('earn gate', () => {
 })
 
 describe('locked spares (ticket 09)', () => {
-  /** Level 20 is the first locked level; `SPARES_LOCK_FROM` is that pin. */
-  const locked = { level: SPARES_LOCK_FROM, highest: SPARES_LOCK_FROM }
+  /** Level 30 is the first padlocked level: the appended spare is sealed. */
+  const locked = { level: EXTRA_SPARE_FROM, highest: EXTRA_SPARE_FROM }
 
-  it('seals empty spares at the locked level and leaves colours alone', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+  it('seals only the appended spare at the locked level and leaves the rest alone', () => {
+    const h = harness([[1, 1], []], {}, locked)
     h.controller.start()
-    expect(h.controller.state.tubes.map((tube) => tube.open)).toEqual([undefined, 0, 0])
+    expect(h.controller.state.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, 0])
   })
 
   it('leaves every spare open below the locked level', () => {
-    const h = harness([[1, 1], [], []], {}, { level: SPARES_LOCK_FROM - 1 })
+    const h = harness([[1, 1], [], []], {}, { level: EXTRA_SPARE_FROM - 1 })
     h.controller.start()
     expect(h.controller.state.tubes.every((tube) => tube.open === undefined)).toBe(true)
   })
 
   it('tapping a sealed spare opens the gate for that tube, not a move', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     const eventsBefore = h.events.length
 
@@ -662,7 +662,7 @@ describe('locked spares (ticket 09)', () => {
   })
 
   it('a correct answer opens one slot and says so to the stage', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1], []], {}, locked)
     h.controller.start()
     h.controller.tap(2)
     h.controller.answer(h.challengeShows[0].answer)
@@ -675,7 +675,7 @@ describe('locked spares (ticket 09)', () => {
   })
 
   it('a wrong answer or dismissal grants no slot', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
 
     h.controller.tap(1)
@@ -688,7 +688,7 @@ describe('locked spares (ticket 09)', () => {
   })
 
   it('growth stops at capacity, and a grown spare then pours normally', () => {
-    const h = harness([[1, 1], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
 
     const prompts: string[] = []
@@ -713,7 +713,7 @@ describe('locked spares (ticket 09)', () => {
   })
 
   it('a partly open spare pours only up to its open slots', () => {
-    const h = harness([[1, 1, 1, 1], []], {}, locked)
+    const h = harness([[1, 1, 1, 1]], {}, locked)
     h.controller.start()
     h.controller.tap(1)
     h.controller.answer(h.challengeShows[0].answer) // one slot open
@@ -743,7 +743,7 @@ describe('locked spares (ticket 09)', () => {
 
   it('restart, next level and play again reseal the spares', () => {
     const reseal = () => {
-      const h = harness([[1, 1], []], {}, locked)
+      const h = harness([[1, 1]], {}, locked)
       h.controller.start()
       h.controller.tap(1)
       h.controller.answer(h.challengeShows[0].answer)
@@ -755,11 +755,11 @@ describe('locked spares (ticket 09)', () => {
     restarted.controller.restart()
     expect(restarted.controller.state.tubes[1].open).toBe(0)
 
-    const next = harness([[1, 1], []], {}, locked)
+    const next = harness([[1, 1]], {}, locked)
     next.controller.start()
     next.controller.nextLevel()
     expect(next.controller.state.tubes[1].open).toBe(0)
-    expect(next.controller.level).toBe(SPARES_LOCK_FROM + 1)
+    expect(next.controller.level).toBe(EXTRA_SPARE_FROM + 1)
 
     const again = harness([[1, 1], []], {}, { level: MAX_LEVEL, highest: MAX_LEVEL })
     again.controller.start()
@@ -769,21 +769,21 @@ describe('locked spares (ticket 09)', () => {
   })
 
   it('many rapid taps on a sealed spare do not draw more than one gate', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     for (let i = 0; i < 12; i++) h.controller.tap(1)
     expect(h.challengeShows).toHaveLength(1)
     expect(h.controller.state.tubes[1].open).toBe(0)
 
     h.controller.answer(h.challengeShows[0].answer)
-    for (let i = 0; i < 12; i++) h.controller.tap(2)
+    for (let i = 0; i < 12; i++) h.controller.tap(1)
     expect(h.challengeShows).toHaveLength(2)
     h.controller.answer(h.challengeShows[1].answer)
-    expect(h.controller.state.tubes[2].open).toBe(1)
+    expect(h.controller.state.tubes[1].open).toBe(2)
   })
 
   it('a sealed spare refuses a pour with feedback and keeps the selection', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     h.controller.tap(0) // select the full tube
     const before = h.controller.state
@@ -797,7 +797,7 @@ describe('locked spares (ticket 09)', () => {
 
   it('the reward does not change which challenge is drawn', () => {
     const drawFor = (open: (h: Harness) => void): string | undefined => {
-      const h = harness([[1, 1], [1], []], {}, locked)
+      const h = harness([[1, 1], [1]], {}, locked)
       h.controller.start()
       open(h)
       return h.challengeShows[0]?.prompt
@@ -825,22 +825,23 @@ describe('locked spares (ticket 09)', () => {
 })
 
 describe('optional spares (ticket 14)', () => {
-  const locked = { level: SPARES_LOCK_FROM, highest: SPARES_LOCK_FROM }
+  const locked = { level: EXTRA_SPARE_FROM, highest: EXTRA_SPARE_FROM }
 
   /**
    * `[[1,1,1],[1],[],[]]`: tip tube 1 into empty tube 2, then tip tube 2 into
-   * tube 0 to complete it. The solution uses empty 2 but never empty 3, so 2
-   * stays open and 3 is the optional lock.
+   * tube 0 to complete it. The solution never uses generated empty 3, but only
+   * the appended spare (4) is ever sealed (ticket 29: one sealing rule).
    */
   const solution: Move[] = [
     { from: 1, to: 2, amount: 1 },
     { from: 2, to: 0, amount: 1 },
   ]
 
-  it('seals only the empty the solution never pours into', () => {
+  it('seals only the appended spare, never a generated empty the solution skips', () => {
     const h = harness([[1, 1, 1], [1], [], []], {}, locked, undefined, solution)
     h.controller.start()
     expect(h.controller.state.tubes.map((tube) => tube.open)).toEqual([
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -858,35 +859,17 @@ describe('optional spares (ticket 14)', () => {
     }
 
     expect(h.controller.state.won).toBe(true)
-    expect(h.controller.state.tubes[3].open).toBe(0) // the lock stayed shut
+    expect(h.controller.state.tubes[4].open).toBe(0) // the lock stayed shut
     expect(h.challengeShows).toEqual([])
     expect(h.rewards).toEqual([])
-  })
-
-  it('shows no lock when the solution pours into every empty', () => {
-    const both: Move[] = [
-      { from: 1, to: 2, amount: 1 },
-      { from: 2, to: 3, amount: 1 },
-      { from: 3, to: 0, amount: 1 },
-    ]
-    const h = harness([[1, 1, 1], [1], [], []], {}, locked, undefined, both)
-    h.controller.start()
-    expect(h.controller.state.tubes.every((tube) => tube.open === undefined)).toBe(true)
-
-    for (const move of both) {
-      h.controller.tap(move.from)
-      h.controller.tap(move.to)
-    }
-    expect(h.controller.state.won).toBe(true)
-    expect(h.challengeShows).toEqual([])
   })
 })
 
 describe('padlocks (ticket 15)', () => {
-  const locked = { level: SPARES_LOCK_FROM, highest: SPARES_LOCK_FROM }
+  const locked = { level: EXTRA_SPARE_FROM, highest: EXTRA_SPARE_FROM }
 
   it('a padlock tap asks to grow that tube and is not a glass tap', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     const eventsBefore = h.events.length
 
@@ -898,7 +881,7 @@ describe('padlocks (ticket 15)', () => {
   })
 
   it('comes back for a second block after pouring into the spare', () => {
-    const h = harness([[1, 1, 1, 1], []], {}, locked)
+    const h = harness([[1, 1, 1, 1]], {}, locked)
     h.controller.start()
 
     // Earn one slot, then pour one unit into it.
@@ -925,16 +908,16 @@ describe('padlocks (ticket 15)', () => {
   })
 
   it('a padlock tap while the gate is open draws nothing', () => {
-    const h = harness([[1, 1], [], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     h.controller.tapPadlock(1)
-    for (let i = 0; i < 12; i++) h.controller.tapPadlock(2)
+    for (let i = 0; i < 12; i++) h.controller.tapPadlock(1)
     expect(h.challengeShows).toHaveLength(1)
-    expect(h.controller.state.tubes[2].open).toBe(0)
+    expect(h.controller.state.tubes[1].open).toBe(0)
   })
 
   it('the glass of a coloured partly-open spare still selects', () => {
-    const h = harness([[1, 1], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     h.controller.tapPadlock(1)
     h.controller.answer(h.challengeShows[0].answer)
@@ -949,7 +932,7 @@ describe('padlocks (ticket 15)', () => {
   })
 
   it('a fully open tube has no padlock left to tap', () => {
-    const h = harness([[1, 1], []], {}, locked)
+    const h = harness([[1, 1]], {}, locked)
     h.controller.start()
     for (let grown = 1; grown <= 4; grown++) {
       h.controller.tapPadlock(1)
@@ -1078,10 +1061,10 @@ describe('guaranteed spare (ticket 18)', () => {
 describe('appended empty lock (ticket 24)', () => {
   // The real level-51 board: 11 colours plus two generated spares = 13 tubes.
   // The controller appends the guaranteed empty 14th, and that is the padlock.
-  const level = generateLevel(CLIMB_FROM)
+  const level = generateLevel(51)
   const board = level.board
   const solution = level.solution
-  const late = { level: CLIMB_FROM, highest: CLIMB_FROM }
+  const late = { level: 51, highest: 51 }
   const startLate = () => {
     const h = harness(board, {}, late, undefined, solution)
     h.controller.start()
@@ -1152,15 +1135,15 @@ describe('appended empty lock (ticket 24)', () => {
     next.controller.answer(next.challengeShows[0].answer)
     next.controller.nextLevel()
     expect(next.controller.state.tubes[lock].open).toBe(0)
-    expect(next.controller.level).toBe(CLIMB_FROM + 1)
+    expect(next.controller.level).toBe(51 + 1)
   })
 
   it('level 100 hosts eleven question-mark vials and none is the empty lock', () => {
-    const final = generateLevel(CLIMB_LAST)
+    const final = generateLevel(100)
     const h = harness(
       final.board,
       {},
-      { level: CLIMB_LAST, highest: CLIMB_LAST },
+      { level: 100, highest: 100 },
       undefined,
       final.solution,
     )
@@ -1371,11 +1354,12 @@ describe('hidden blocks (ticket 10)', () => {
     others.forEach((i) => expect(h.controller.state.tubes[i].hidden).toBeUndefined())
   })
 
-  it('hides two tubes and seals the spares on the final tier', () => {
-    const h = harness([[1, 1], [2, 2], [], []], {}, { level: SPARES_LOCK_FROM })
+  it('hides two tubes and seals the appended spare on the padlocked tier', () => {
+    const h = harness([[1, 1], [2, 2], []], {}, { level: EXTRA_SPARE_FROM })
     h.controller.start()
-    expect(h.controller.state.tubes[2].open).toBe(0)
-    const picks = pickHiddenTubes(SPARES_LOCK_FROM, h.controller.state.tubes)
+    expect(h.controller.state.tubes[3].open).toBe(0)
+    expect(h.controller.state.tubes[2].open).toBeUndefined()
+    const picks = pickHiddenTubes(EXTRA_SPARE_FROM, h.controller.state.tubes)
     expect(picks).toHaveLength(2)
     // The pick never lands on an empty tube, so it stays clear of the seals.
     picks.forEach((i) => {
@@ -1431,11 +1415,11 @@ describe('level jump (ticket 11)', () => {
     expect(h.savedProgress).toEqual([{ level: 15, highest: 15 }])
   })
 
-  it('seals the spares when the jump lands on the locked tier', () => {
-    const h = harness([[1, 1], [2, 2], [], []], {}, { level: 1 }, 20)
+  it('seals the appended spare when the jump lands on the padlocked tier', () => {
+    const h = harness([[1, 1], [2, 2], []], {}, { level: 1 }, EXTRA_SPARE_FROM)
     h.controller.start()
-    expect(h.boards).toEqual([20])
-    expect(h.controller.state.tubes[2].open).toBe(0)
+    expect(h.boards).toEqual([EXTRA_SPARE_FROM])
+    expect(h.controller.state.tubes[3].open).toBe(0)
   })
 
   it('clamps a jump outside the board range', () => {

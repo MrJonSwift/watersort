@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addExtraSpare, createGame, growBlock, hideBlocks, sealSpares, tap, undo } from './state'
-import { CLIMB_FROM } from './levels'
 import { pour } from './rules'
 import type { GameState, Move } from './types'
-
-/** Every pre-ticket-22 test below exercises the untouched 1–50 rule. */
-const OLD_LEVEL = CLIMB_FROM - 1
 
 /** A fresh board whose second tube is a partly grown spare. */
 function opened(): GameState {
@@ -32,7 +28,7 @@ describe('addExtraSpare (ticket 18)', () => {
       { from: 1, to: 2, amount: 1 },
       { from: 2, to: 0, amount: 1 },
     ]
-    const built = sealSpares(addExtraSpare(game), solution, OLD_LEVEL)
+    const built = sealSpares(addExtraSpare(game), solution, 3)
 
     expect(built.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, undefined, 0])
     let state = built
@@ -42,53 +38,19 @@ describe('addExtraSpare (ticket 18)', () => {
   })
 })
 
-describe('sealSpares', () => {
-  const board = [[1, 2, 1, 2], [2], [], []]
-
-  it('seals an empty the solution never pours into (ticket 14)', () => {
-    // Only empty 2 is a solution destination; empty 3 is untouched and locks.
-    const solution: Move[] = [{ from: 0, to: 2, amount: 1 }]
-    const state = sealSpares(createGame(board), solution, OLD_LEVEL)
-    expect(state.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, undefined, 0])
-  })
-
-  it('leaves an empty the solution pours into fully open', () => {
-    const solution: Move[] = [{ from: 0, to: 3, amount: 1 }]
-    const state = sealSpares(createGame(board), solution, OLD_LEVEL)
-    expect(state.tubes[3].open).toBeUndefined()
-    expect(state.tubes[2].open).toBe(0)
-  })
-
-  it('seals every empty when the solution uses none of them', () => {
-    const state = sealSpares(createGame(board), [], OLD_LEVEL)
-    expect(state.tubes.map((tube) => tube.open)).toEqual([undefined, undefined, 0, 0])
-  })
-
-  it('seals nothing when the solution uses every empty', () => {
-    const solution: Move[] = [
-      { from: 0, to: 2, amount: 1 },
-      { from: 0, to: 3, amount: 1 },
-    ]
-    const state = sealSpares(createGame(board), solution, OLD_LEVEL)
+describe('sealSpares (one sealing rule, ticket 29)', () => {
+  it('seals nothing without an appended spare, even an unused empty', () => {
+    const board = [[1, 2, 1, 2], [2], [], []]
+    const state = sealSpares(createGame(board), [])
     expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
   })
 
-  it('never seals a tube holding colours, wherever the solution pours', () => {
-    const solution: Move[] = [{ from: 1, to: 0, amount: 1 }]
-    const state = sealSpares(createGame([[1], [2, 2]]), solution, OLD_LEVEL)
-    expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
-  })
-
-  it('leaves a board with no empty tube alone', () => {
-    const state = sealSpares(createGame([[1, 1], [2, 2]]), [], OLD_LEVEL)
-    expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
-  })
-
-  it('leaves everything else untouched', () => {
-    const state = createGame([[1], []])
-    const sealed = sealSpares(state, [], OLD_LEVEL)
+  it('leaves everything but the appended spare untouched', () => {
+    const state = addExtraSpare(createGame([[1], []]))
+    const sealed = sealSpares(state, [], 2)
     expect(sealed.capacity).toBe(state.capacity)
-    expect(sealed.tubes[0]).toEqual(state.tubes[0])
+    expect(sealed.tubes.slice(0, 2)).toEqual(state.tubes.slice(0, 2))
+    expect(sealed.tubes[2]).toEqual({ colors: [], open: 0 })
   })
 })
 
@@ -117,7 +79,7 @@ describe('appended empty lock (ticket 24)', () => {
 
   it('seals the appended empty spare, never a coloured spare', () => {
     const withSpare = session()
-    const state = sealSpares(withSpare, solution, CLIMB_FROM, appended)
+    const state = sealSpares(withSpare, solution, appended)
 
     expect(state.tubes[appended]).toEqual({ colors: [], open: 0 })
     // Ticket 22 used to pad the coloured, solution-unused spare 3. Ticket 24
@@ -128,8 +90,8 @@ describe('appended empty lock (ticket 24)', () => {
     expect(state.tubes.slice(0, 3)).toEqual(withSpare.tubes.slice(0, 3))
   })
 
-  it('seals nothing from the climb when no appended spare is named', () => {
-    const state = sealSpares(createGame(board), solution, CLIMB_FROM)
+  it('seals nothing when no appended spare is named', () => {
+    const state = sealSpares(createGame(board), solution)
     expect(state.tubes.every((tube) => tube.open === undefined)).toBe(true)
   })
 
@@ -141,14 +103,14 @@ describe('appended empty lock (ticket 24)', () => {
         index === appended ? { colors: [1] } : tube,
       ),
     }
-    expect(sealSpares(coloured, solution, CLIMB_FROM, appended)).toBe(coloured)
+    expect(sealSpares(coloured, solution, appended)).toBe(coloured)
 
     const used = [...solution, { from: 0, to: appended, amount: 1 }]
-    expect(sealSpares(withSpare, used, CLIMB_FROM, appended)).toBe(withSpare)
+    expect(sealSpares(withSpare, used, appended)).toBe(withSpare)
   })
 
   it('a sealed appended spare is never a source, so the solution wins question-free', () => {
-    let state = sealSpares(session(), solution, CLIMB_FROM, appended)
+    let state = sealSpares(session(), solution, appended)
     for (const move of solution) {
       expect(state.tubes[move.from].colors.length).toBeGreaterThan(0)
       state = pour(state, move.from, move.to)
@@ -159,7 +121,7 @@ describe('appended empty lock (ticket 24)', () => {
   })
 
   it('grows the empty appended spare one slot at a time', () => {
-    let state = sealSpares(session(), solution, CLIMB_FROM, appended)
+    let state = sealSpares(session(), solution, appended)
     expect(pour(state, 0, appended)).toBe(state) // sealed: nothing fits yet
 
     state = growBlock(state, appended)
@@ -171,12 +133,6 @@ describe('appended empty lock (ticket 24)', () => {
     expect(poured.tubes[appended]).toEqual({ colors: [2], open: 2 })
     // The padlock, not the empty rule, allows another block above the colour.
     expect(growBlock(poured, appended).tubes[appended]).toEqual({ colors: [2], open: 3 })
-  })
-
-  it('keeps the empty-only rule below the climb, where the index means nothing', () => {
-    const state = sealSpares(session(), solution, CLIMB_FROM - 1, appended)
-    expect(state.tubes[appended].open).toBe(0) // unused empty: the old rule seals it
-    expect(state.tubes[3]).toEqual({ colors: [1, 2, 3] }) // colour never pads
   })
 })
 
@@ -212,7 +168,7 @@ describe('growBlock', () => {
   })
 
   it('is the seam between a sealed board and a playable pour', () => {
-    let state = sealSpares(createGame([[1, 1, 1], []]), [], OLD_LEVEL)
+    let state = sealSpares(addExtraSpare(createGame([[1, 1, 1]])), [], 1)
     expect(pour(state, 0, 1)).toBe(state) // sealed: nothing fits
 
     state = growBlock(state, 1)
@@ -269,7 +225,7 @@ describe('hideBlocks', () => {
     // was — no `hidden` count, no colour to leak or reveal.
     const withSpare = addExtraSpare(createGame([[1, 1], [2, 2], [3, 3], [], []]))
     const appended = withSpare.tubes.length - 1
-    const sealed = sealSpares(withSpare, [], CLIMB_FROM, appended)
+    const sealed = sealSpares(withSpare, [], appended)
     const hidden = hideBlocks(sealed, [appended, 0])
     expect(hidden.tubes[appended]).toEqual({ colors: [], open: 0 })
     expect(hidden.tubes[0].hidden).toBe(1)

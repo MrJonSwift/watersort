@@ -1,4 +1,3 @@
-import { CLIMB_FROM } from './levels'
 import { DEFAULT_CAPACITY, canGrow, canPour, openSlots, pour } from './rules'
 import type { ColorId, GameState, Move } from './types'
 
@@ -24,55 +23,30 @@ export function createGame(
 }
 
 /**
- * Seal the board's spare tubes that the level's validated solution never uses
- * (tickets 09 and 14). A sealed spare has no open slots until the player earns
- * them at the gate, one block per correct answer — but it is always optional:
- * because the solution never pours into a sealed tube, replaying it unchanged
- * wins with the sealed set held at `open = 0` forever.
- *
- * Below the climb the generator scrambles into the spares, so a "spare" is not
- * a fixed index: it is whichever tube is empty on this board. An empty the
- * solution pours into (it is a `to` in any recorded move) stays fully open and
- * is never locked — sealing it would put a toll on the solution path. If the
- * solution uses every empty, no tube is sealed at all; that is recorded,
- * deliberate, and preferable to re-rolling a board people have already played.
- *
- * From `CLIMB_FROM` the target is fixed (ticket 24, superseding ticket 22's
- * coloured padding): the caller passes the index of the appended spare, the
- * empty tube the controller adds after generation. It is never a solution
- * destination, so winding it shut keeps the level winnable without a question,
- * and unlocking it reveals an empty tube — never colour or "?". The generated
- * spares stay plain, so one remains a working empty. A climb board with no
- * appended index is returned untouched: the lock comes from the append, not
- * from the generator. Levels 1–50 keep the empty-only path above, which is
- * what leaves their boards byte-for-byte frozen.
+ * Seal the appended spare (tickets 09, 14, 18, 24, 29). A sealed spare has no
+ * open slots until the player earns them at the gate, one block per correct
+ * answer, and it is always optional: it is appended after generation, so the
+ * solver's solution never pours into it, and replaying that solution wins with
+ * the spare held at `open = 0` forever. Unlocking it reveals an empty tube,
+ * never colour or "?". It is the only tube that is ever sealed: the generated
+ * spares stay plain. With no appended index, or if the solution names that
+ * tube or it holds colour, the state is returned untouched — the rule never
+ * puts a toll on the solution path.
  */
 export function sealSpares(
   state: GameState,
   solution: readonly Move[],
-  level: number,
   appendedSpare?: number,
 ): GameState {
-  const used = new Set(solution.map((move) => move.to))
-
-  if (level >= CLIMB_FROM) {
-    if (appendedSpare === undefined) return state
-    const tube = state.tubes[appendedSpare]
-    if (!tube || tube.colors.length > 0 || used.has(appendedSpare)) return state
-    return {
-      ...state,
-      tubes: state.tubes.map((t, index) =>
-        index === appendedSpare ? { ...t, colors: [], open: 0 } : t,
-      ),
-    }
-  }
-
+  if (appendedSpare === undefined) return state
+  const tube = state.tubes[appendedSpare]
+  const used = solution.some((move) => move.to === appendedSpare || move.from === appendedSpare)
+  if (!tube || tube.colors.length > 0 || used) return state
   return {
     ...state,
-    tubes: state.tubes.map((tube, index) => {
-      if (used.has(index)) return tube
-      return tube.colors.length === 0 ? { ...tube, colors: [], open: 0 } : tube
-    }),
+    tubes: state.tubes.map((t, index) =>
+      index === appendedSpare ? { ...t, colors: [], open: 0 } : t,
+    ),
   }
 }
 

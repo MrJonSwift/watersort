@@ -1,147 +1,45 @@
 /**
- * The numbered difficulty curve.
+ * The numbered difficulty curve (ticket 29: one generator for every level).
  *
- * A level config describes one board: how many colours fill tubes, how many
- * spare tubes sit beside them, and how many reverse moves to scramble it with.
- * Capacity is not part of it — capacity is a rule (`rules.ts`), not difficulty.
+ * Every level is a seeded shuffle of full colour tubes plus two empty spares,
+ * proven solvable by the bundled solver and chosen by its measured difficulty
+ * (`generator.ts`, `difficulty.ts`). What changes with the level number is
+ * only: how many colours (`levelColors`), how mixed the board starts
+ * (`levelMix`), which random-win rate the kept board aims for
+ * (`levelTarget`), and the feature schedules the player recognises
+ * (concealment from `HIDDEN_FROM`, the padlocked spare from
+ * `EXTRA_SPARE_FROM`). Everything is derived from the level number; there is
+ * no per-level table. Capacity is a rule (`rules.ts`), not difficulty.
  */
-export interface LevelConfig {
-  /** Distinct colours on the board, one full tube's worth each. */
-  colors: number
-  /** Spare tubes added after the full ones. */
-  emptyTubes: number
-  /** Reverse moves applied to the solved board while scrambling. */
-  scramble: number
-}
 
 /**
- * The hand-tuned 40-level curve: 3 colours at level 1 up to 10 colours and 40
- * reverse moves at level 40. Levels past 40 are derived by `levelConfig`.
- * Every level keeps two spare tubes; the ramp comes from colours and scramble,
- * never from taking a spare away.
- *
- * Each new colour tier starts below the previous tier's last scramble, so the
- * extra colour is the step rather than the colour plus a scramble jump. The
- * 9-colour tier (31–35) and 10-colour tier (36–40) each add five levels; their
- * boards use 11 and 12 tubes, which is why the board lays out seven per row
- * above ten tubes (ticket 17).
- */
-export const LEVELS: readonly LevelConfig[] = [
-  { colors: 3, emptyTubes: 2, scramble: 6 },
-  { colors: 3, emptyTubes: 2, scramble: 8 },
-  { colors: 3, emptyTubes: 2, scramble: 10 },
-  { colors: 4, emptyTubes: 2, scramble: 8 },
-  { colors: 4, emptyTubes: 2, scramble: 10 },
-  { colors: 4, emptyTubes: 2, scramble: 12 },
-  { colors: 5, emptyTubes: 2, scramble: 10 },
-  { colors: 5, emptyTubes: 2, scramble: 12 },
-  { colors: 5, emptyTubes: 2, scramble: 14 },
-  { colors: 5, emptyTubes: 2, scramble: 16 },
-  { colors: 6, emptyTubes: 2, scramble: 12 },
-  { colors: 6, emptyTubes: 2, scramble: 14 },
-  { colors: 6, emptyTubes: 2, scramble: 16 },
-  { colors: 6, emptyTubes: 2, scramble: 18 },
-  { colors: 7, emptyTubes: 2, scramble: 14 },
-  { colors: 7, emptyTubes: 2, scramble: 16 },
-  { colors: 7, emptyTubes: 2, scramble: 18 },
-  { colors: 7, emptyTubes: 2, scramble: 20 },
-  { colors: 7, emptyTubes: 2, scramble: 22 },
-  { colors: 8, emptyTubes: 2, scramble: 16 },
-  { colors: 8, emptyTubes: 2, scramble: 18 },
-  { colors: 8, emptyTubes: 2, scramble: 20 },
-  { colors: 8, emptyTubes: 2, scramble: 22 },
-  { colors: 8, emptyTubes: 2, scramble: 24 },
-  { colors: 8, emptyTubes: 2, scramble: 26 },
-  { colors: 8, emptyTubes: 2, scramble: 28 },
-  { colors: 8, emptyTubes: 2, scramble: 30 },
-  { colors: 8, emptyTubes: 2, scramble: 32 },
-  { colors: 8, emptyTubes: 2, scramble: 34 },
-  { colors: 8, emptyTubes: 2, scramble: 36 },
-  { colors: 9, emptyTubes: 2, scramble: 22 },
-  { colors: 9, emptyTubes: 2, scramble: 26 },
-  { colors: 9, emptyTubes: 2, scramble: 30 },
-  { colors: 9, emptyTubes: 2, scramble: 34 },
-  { colors: 9, emptyTubes: 2, scramble: 38 },
-  { colors: 10, emptyTubes: 2, scramble: 24 },
-  { colors: 10, emptyTubes: 2, scramble: 28 },
-  { colors: 10, emptyTubes: 2, scramble: 32 },
-  { colors: 10, emptyTubes: 2, scramble: 36 },
-  { colors: 10, emptyTubes: 2, scramble: 40 },
-]
-
-/**
- * The last level people can reach. Levels 1–40 are the hand-tuned curve above;
- * 41–100 are derived by `levelConfig`, and from `SHUFFLE_FROM` the shuffled
- * tier's ramp (below) is derived from the level number too, so extending the
- * game is a one-line change here rather than a new row in a table. Boards are
- * bounded by the phone (see `MAX_TWO_ROW_TUBES`), so "infinite" means unbounded
- * in *level number*, not in board size — past the colour ceiling the ramp
- * climbs through how mixed the board is, measured by the solver-backed scorer.
- *
- * Ticket 21 raised this from 50 to 100. Levels 51–100 are the back-loaded
- * climb: 11 colours, 14 tubes and a fixed gate-capped scramble, with the number
- * of concealed vials rising 3 → 11 (ticket 24). Ticket 25 raises it to 9999:
- * from `SHUFFLE_FROM` boards are seeded shuffles verified by the solver, and
- * the ramp settles into a plateau, so the level number is effectively unbounded.
+ * The last level people can reach. Boards are bounded by the phone (see
+ * `MAX_TWO_ROW_TUBES`), so "unbounded" means in level number, not board size:
+ * past the colour ceiling the ramp climbs through how mixed the board is, then
+ * holds on a plateau.
  */
 export const MAX_LEVEL = 9999
 
-/** The first derived level. Everything up to 40 is the validated hand-tuned curve. */
-export const EXPERT_FROM = 41
-
 /**
- * The playable colour ceiling (ticket 24, decision 25). The derived tier has
- * held 11 colours since ticket 19; ticket 24 makes 11 the final ceiling too, so
- * the twelfth `palette` swatch never appears on a board that can host the
- * appended spare: at 11 colours the generated board is 13 tubes, so the
- * appended empty spare fits under the 14-tube ceiling and can carry the padlock
- * while a plain empty spare stays a solution destination.
+ * The colour tiers: from each listed level the board has that many colours.
+ * Three colours at level 1 rising to the playable ceiling of 11 at 41
+ * (ticket 24, decision 25): at 11 colours the generated board is 13 tubes, so
+ * the appended padlocked spare still fits under the 14-tube ceiling.
  */
-const EXPERT_MAX_COLORS = 11
+export const COLOR_TIERS: readonly (readonly [fromLevel: number, colors: number])[] = [
+  [1, 3],
+  [4, 4],
+  [7, 5],
+  [11, 6],
+  [15, 7],
+  [20, 8],
+  [31, 9],
+  [36, 10],
+  [41, 11],
+]
 
-/**
- * Scramble formula for the derived tier: 38, 42, 46, 50, 54, repeating. The
- * cycle restarts at each five-level boundary, including 46 after the colour
- * ceiling stops stepping; the ramp past 50 is concealment, not a longer
- * scramble.
- */
-const EXPERT_BASE_SCRAMBLE = 38
-const EXPERT_SCRAMBLE_STEP = 4
-const EXPERT_SCRAMBLE_CYCLE = 5
-
-/** Every derived level keeps the same two generated spares. */
-const EXPERT_EMPTY_TUBES = 2
-
-/**
- * First level of the back-loaded climb (ticket 21). Everything through 50 keeps
- * its shipped config, board, solution and hidden pick; both the generator's
- * shape rule and the concealment schedule below start here. Gating on the level
- * number is what makes 1–50 byte-for-byte frozen.
- */
-export const CLIMB_FROM = 51
-
-/**
- * The last reverse-scrambled level. Levels 1–100 are frozen byte-for-byte
- * (ticket 25); this number, not `MAX_LEVEL`, is what their schedules end on.
- */
-export const CLIMB_LAST = 100
-
-/**
- * Scramble ceiling for the climb. The unchanged quality gate binds well below
- * a scramble of 100; ticket 24's probe re-confirmed 54 passes every level
- * 46–100 at 11 colours inside the search budget, so the climb holds the
- * level-50 value and concealment is the ramp — the gate is never weakened to
- * let a longer scramble through.
- */
-export const CLIMB_SCRAMBLE = 54
-
-/**
- * Minimum number of tubes holding at least two units on a late board (ticket
- * 20). It gives level 100's eleven concealed vials somewhere to hide — the
- * locked appended spare is empty and can conceal nothing, so the eleven
- * colour-bearing candidates carry the whole climb.
- */
-export const LATE_BOARD_MIN_MULTI = 11
+/** Generated empty spares on every board; the controller may append a third. */
+export const LEVEL_SPARES = 2
 
 /**
  * The most tubes that still fit in two rows of seven on a 360px phone (ticket
@@ -151,82 +49,40 @@ export const LATE_BOARD_MIN_MULTI = 11
 export const MAX_TWO_ROW_TUBES = 14
 
 /**
- * The level from which spare tubes may start sealed (tickets 09 and 14). Only
- * an empty the level's validated solution never pours into is locked: the
- * spare is an optional escape hatch, never a toll on the solution path. An
- * empty the solution uses stays fully open, and a level whose solution uses
- * every empty shows no lock at all — on the shipped 20–30 curve that is every
- * level, recorded deliberately rather than re-rolling boards. Tubes holding
- * colours are never sealed. Levels below this number are untouched. Moving it
- * is a content decision that needs a deliberate ticket.
- *
- * Ticket 15 adds the padlock affordance but leaves the 20–30 curve alone; the
- * owner declined a re-roll after seeing the cost (20–23 would have had to
- * become easier than level 19). Ticket 17's new boards kept that outcome: the
- * generator uses every empty, so `generateLevel` alone still shows no lock
- * (pinned in `generator.test.ts`). Ticket 18 gives levels from
- * `EXTRA_SPARE_FROM` an appended spare, which is what makes a padlock visible.
- */
-export const SPARES_LOCK_FROM = 20
-
-/**
  * The level from which the board carries one extra empty spare beyond the two
- * the generator scrambles into (ticket 18). It is appended *after* generation,
- * so the validated solution's tube indices stay valid and never name it:
- * solution-aware sealing then leaves exactly one guaranteed padlock. Generated
- * boards, solutions, snapshots and curve tokens stay byte-for-byte the same.
- * Moving this line changes which levels show a lock — a content decision.
+ * the generator makes (ticket 18), padlocked (ticket 24). It is appended
+ * *after* generation, so the solver's solution never names it: the level is
+ * always winnable with the padlock sealed and no question answered. It is the
+ * only tube that is ever sealed. Moving this line is a content decision.
  */
 export const EXTRA_SPARE_FROM = 30
 
 /**
- * The level from which a tube starts with hidden blocks (ticket 10): one of
- * the tubes that holds colours shows "?" until its segments surface, so the
- * mid tiers add a knowledge tax before the final tier seals the spares.
- * Levels below it are untouched. Moving this number is a content decision —
- * it re-skins every level at or above it — and needs a deliberate ticket.
+ * The level from which tubes start with hidden blocks (ticket 10). Moving this
+ * number re-skins every level at or above it: a content decision.
  */
 export const HIDDEN_FROM = 15
 
 /**
- * How many tubes hide their blocks on a level. One from `HIDDEN_FROM` to 19,
- * two from level 20 to 40 (the 8-, 9- and 10-colour tiers), and three on the
- * derived tier through level 50. From `CLIMB_FROM` the back-loaded climb takes
- * over: 3, 5, 9 and 11 vials at its four anchors, interpolated between them.
- * Always zero below `HIDDEN_FROM`.
+ * How many tubes hide their blocks, by level: one from `HIDDEN_FROM`, two from
+ * 20, three from 41, then a climb through the anchors 3 → 5 → 9 → 11 over
+ * levels 51–100 (ticket 21), holding at 11 — an empty appended spare can hide
+ * nothing (ticket 24). Interpolated between anchors and rounded, so the count
+ * is a stepped, monotonic ramp derived from the level number.
  */
-export function hiddenTubeCount(level: number): number {
-  if (level < HIDDEN_FROM) return 0
-  if (level >= CLIMB_FROM) return climbHiddenCount(level)
-  if (level >= EXPERT_FROM) return 3
-  return level >= SPARES_LOCK_FROM ? 2 : 1
-}
-
-/**
- * The four anchors of the concealment climb (ticket 21): 3 vials at 51, 5 by
- * 70, 9 by 85 and 11 at 100. A level between anchors interpolates, so the count
- * is derived from the level number instead of a fifty-row table. Rounding gives
- * a stepped, monotonic ramp (3→4→5 over the first stretch, then the climb
- * accelerates) without ever asking for more vials than the board can host. The
- * top anchor is 11 because an empty appended spare can hide nothing (ticket 24).
- */
-const CLIMB_HIDDEN_ANCHORS: readonly (readonly [level: number, count: number])[] = [
-  [CLIMB_FROM, 3],
+const HIDDEN_ANCHORS: readonly (readonly [level: number, count: number])[] = [
+  [51, 3],
   [70, 5],
   [85, 9],
-  [CLIMB_LAST, 11],
+  [100, 11],
 ]
 
-function climbHiddenCount(level: number): number {
-  for (let i = 1; i < CLIMB_HIDDEN_ANCHORS.length; i++) {
-    const [toLevel, toCount] = CLIMB_HIDDEN_ANCHORS[i]
-    if (level <= toLevel) {
-      const [fromLevel, fromCount] = CLIMB_HIDDEN_ANCHORS[i - 1]
-      const span = toLevel - fromLevel
-      return fromCount + Math.round(((level - fromLevel) * (toCount - fromCount)) / span)
-    }
-  }
-  return CLIMB_HIDDEN_ANCHORS[CLIMB_HIDDEN_ANCHORS.length - 1][1]
+export function hiddenTubeCount(level: number): number {
+  if (level < HIDDEN_FROM) return 0
+  if (level < 20) return 1
+  if (level < 41) return 2
+  if (level < HIDDEN_ANCHORS[0][0]) return 3
+  return Math.round(interpolate(HIDDEN_ANCHORS, level, false))
 }
 
 /** Clamp any input into the valid `1..MAX_LEVEL` range. */
@@ -235,94 +91,55 @@ export function clampLevel(level: number): number {
   return Math.min(MAX_LEVEL, Math.max(1, safe))
 }
 
-/**
- * Config for a level number, clamped into `1..MAX_LEVEL`.
- *
- * Levels 1–40 are the validated hand-tuned table. From `EXPERT_FROM` the
- * config is derived from the level number: colours hold at the playable
- * ceiling of 11, while the scramble cycles through a rising five-step pattern
- * and restarts every five levels. From `CLIMB_FROM` that cycle stops at the
- * gate's scramble ceiling and the level is fixed at 11 colours and two spares —
- * the back-loaded climb is carried by concealment. The derivation is pure and
- * deterministic, so the same level always makes the same board, and raising
- * `MAX_LEVEL` is all that is needed to add more levels.
- *
- * From `SHUFFLE_FROM` the generator builds a shuffled board instead and reads
- * its ramp from `shuffleMix`/`shuffleTarget`; the config returned there is the
- * level-100 one, which supplies the board shape (11 colours, two spares) and
- * the reverse-scramble fallback if no shuffled candidate solves.
- *
- * Clamping (rather than throwing) keeps a corrupt save or a bad call from
- * taking the app down. Progress is clamped independently on load.
- */
-export function levelConfig(level: number): LevelConfig {
+/** Colours on the board for a level (clamped). */
+export function levelColors(level: number): number {
   const safe = clampLevel(level)
-  if (safe <= LEVELS.length) return LEVELS[safe - 1]
-  if (safe >= CLIMB_FROM) {
-    return {
-      colors: EXPERT_MAX_COLORS,
-      emptyTubes: EXPERT_EMPTY_TUBES,
-      scramble: CLIMB_SCRAMBLE,
-    }
-  }
-
-  const since = safe - EXPERT_FROM
-  const scramble =
-    EXPERT_BASE_SCRAMBLE + (since % EXPERT_SCRAMBLE_CYCLE) * EXPERT_SCRAMBLE_STEP
-  return { colors: EXPERT_MAX_COLORS, emptyTubes: EXPERT_EMPTY_TUBES, scramble }
+  let colors = COLOR_TIERS[0][1]
+  for (const [from, count] of COLOR_TIERS) if (safe >= from) colors = count
+  return colors
 }
 
 /**
- * First level of the shuffled tier (ticket 25). From here a board is a seeded
- * shuffle of eleven full colour tubes plus two empties, proven solvable by the
- * bundled solver rather than by construction. Gating on the level number is
- * what keeps 1–100 byte-for-byte frozen.
+ * The difficulty target, as a random-playout win rate (`difficulty.ts`),
+ * interpolated in log space between anchors so the fall is geometric. Level 1
+ * is a near-certain win; `PADLOCK_USEFUL_FROM` is where a typical player is
+ * often stuck enough to reach for the padlock (decision 31, chosen by the
+ * owner from the ticket-29 probe); the plateau from 600 is ticket 25's.
  */
-export const SHUFFLE_FROM = CLIMB_LAST + 1
+export const PADLOCK_USEFUL_FROM = 60
+export const PADLOCK_USEFUL_TARGET = 0.25
 
-/** Colours on a shuffled board: every colour tube starts full. */
-export const SHUFFLE_COLORS = EXPERT_MAX_COLORS
-
-/** Generated empty spares on a shuffled board; the controller appends a third. */
-export const SHUFFLE_SPARES = EXPERT_EMPTY_TUBES
-
-/**
- * The difficulty target, as a random-playout win rate (`difficulty.ts`).
- * Measured with the shipped scorer settings below: levels 51–100 have a median
- * of 0.635 and a full eleven-colour shuffle about 0.03. Level 101 starts a
- * little harder than that median, the target falls to the full-shuffle median
- * by 400, then selection carries it to the plateau by 600, where it holds.
- * Between anchors the target interpolates in log space, so the ramp is a
- * smooth geometric fall rather than a straight line that would rush the start.
- */
-export const SHUFFLE_TARGET_ANCHORS: readonly (readonly [level: number, winRate: number])[] = [
-  [SHUFFLE_FROM, 0.5],
+export const TARGET_ANCHORS: readonly (readonly [level: number, winRate: number])[] = [
+  [1, 1],
+  [PADLOCK_USEFUL_FROM, PADLOCK_USEFUL_TARGET],
   [400, 0.03],
   [600, 0.015],
 ]
 
 /**
- * How many seeded transpositions mix the sorted board, by level. A swap
- * exchanges two units in different colour tubes; low counts leave a board
- * close to sorted. From `SHUFFLE_FULL_FROM` the board is a full Fisher–Yates
- * shuffle and difficulty comes from selection alone.
+ * How many seeded transpositions mix the sorted board. A ramp derived from
+ * the level number, never below `colors + 1`: fewer swaps cannot touch every
+ * tube, so most draws would start with a complete tube and be rejected. From
+ * `FULL_SHUFFLE_FROM` the board is a full Fisher–Yates shuffle and difficulty
+ * comes from selection alone.
  */
-export const SHUFFLE_MIX_ANCHORS: readonly (readonly [level: number, swaps: number])[] = [
-  [SHUFFLE_FROM, 9],
+export const MIX_ANCHORS: readonly (readonly [level: number, swaps: number])[] = [
+  [1, 4],
+  [PADLOCK_USEFUL_FROM, 12],
   [400, 24],
 ]
 
 /** From this level the board is a full shuffle, not a counted mix. */
-export const SHUFFLE_FULL_FROM = 400
+export const FULL_SHUFFLE_FROM = 400
 
 /** Scored candidates per level; the one nearest the target is kept. */
-export const SHUFFLE_CANDIDATES = 6
+export const LEVEL_CANDIDATES = 6
 
 /**
  * Draws allowed per level, including boards rejected for starting with a
  * complete tube. Low mixes reject often; this bound keeps a build finite.
  */
-export const SHUFFLE_MAX_DRAWS = 256
+export const MAX_DRAWS = 256
 
 /** Random playouts per candidate score, and the steps after which one is lost. */
 export const SCORE_PLAYOUTS = 100
@@ -331,7 +148,7 @@ export const SCORE_MAX_STEPS = 300
 /** States the solver may expand on one candidate before it is skipped. */
 export const SOLVE_NODE_BUDGET = 5000
 
-function interpolate(
+export function interpolate(
   anchors: readonly (readonly [number, number])[],
   level: number,
   log: boolean,
@@ -352,17 +169,17 @@ function interpolate(
   return anchors[anchors.length - 1][1]
 }
 
-/** The target random-win rate for a shuffled level (non-increasing, then flat). */
-export function shuffleTarget(level: number): number {
-  return interpolate(SHUFFLE_TARGET_ANCHORS, clampLevel(level), true)
+/** The target random-win rate for a level (non-increasing, then flat). */
+export function levelTarget(level: number): number {
+  return interpolate(TARGET_ANCHORS, clampLevel(level), true)
 }
 
 /**
- * Transpositions for a shuffled level, or `null` for a full shuffle. Rounded
- * so the board depends only on integers.
+ * Transpositions for a level, or `null` for a full shuffle. Rounded so the
+ * board depends only on integers.
  */
-export function shuffleMix(level: number): number | null {
+export function levelMix(level: number): number | null {
   const safe = clampLevel(level)
-  if (safe >= SHUFFLE_FULL_FROM) return null
-  return Math.round(interpolate(SHUFFLE_MIX_ANCHORS, safe, false))
+  if (safe >= FULL_SHUFFLE_FROM) return null
+  return Math.max(levelColors(safe) + 1, Math.round(interpolate(MIX_ANCHORS, safe, false)))
 }
