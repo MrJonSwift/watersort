@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pickHiddenTubes } from './hidden'
-import { CLIMB_FROM, CLIMB_LAST, HIDDEN_FROM, hiddenTubeCount } from './levels'
+import { HIDDEN_FROM, hiddenTubeCount } from './levels'
 import { generateLevel } from './generator'
 import { addExtraSpare, createGame, hideBlocks, sealSpares } from './state'
 import type { Tube } from './types'
@@ -96,38 +96,31 @@ describe('per-level pick (integration pin)', () => {
   it('hides the same tubes of the real boards on every device', () => {
     // Same level, same board, same pick: a re-roll of either the generator or
     // the pick shows up here and must be a deliberate content decision.
-    expect(pickHiddenTubes(15, realTubes(15))).toEqual([7]) // re-pinned in ticket 13
-    expect(pickHiddenTubes(20, realTubes(20))).toEqual([1, 9])
-    // New in ticket 17: the 11- and 12-tube boards still pick two, and the
-    // hash keeps them off the spares and spread across the row.
-    expect(pickHiddenTubes(31, realTubes(31))).toEqual([9, 3])
-    expect(pickHiddenTubes(40, realTubes(40))).toEqual([9, 4])
-    // Ticket 19's derived tier: three tubes, spread across the board and never
-    // on a spare. The appended extra spare is empty, so it cannot be picked.
-    expect(pickHiddenTubes(41, realTubes(41))).toEqual([8, 11, 5])
-    expect(pickHiddenTubes(45, realTubes(45))).toEqual([12, 6, 9])
-    // Ticket 24 re-rolls 46 as the first 11-colour level; the picks move with it.
-    expect(pickHiddenTubes(46, realTubes(46))).toEqual([6, 4, 3])
-    expect(pickHiddenTubes(50, realTubes(50))).toEqual([8, 2, 6])
+    // Re-pinned in ticket 29, when every level moved onto one generator.
+    expect(pickHiddenTubes(15, realTubes(15))).toEqual([3])
+    expect(pickHiddenTubes(20, realTubes(20))).toEqual([2,  1])
+    expect(pickHiddenTubes(31, realTubes(31))).toEqual([2,  1])
+    expect(pickHiddenTubes(40, realTubes(40))).toEqual([7,  3])
+    expect(pickHiddenTubes(41, realTubes(41))).toEqual([7,  9,  4])
+    expect(pickHiddenTubes(45, realTubes(45))).toEqual([10,  5,  8])
+    expect(pickHiddenTubes(46, realTubes(46))).toEqual([5,  3,  2])
+    expect(pickHiddenTubes(50, realTubes(50))).toEqual([6,  1,  5])
   })
 
   it('pins the picks at each anchor of the climb', () => {
-    // Four anchors of the derived 3→11 schedule. The whole range is monotonic
-    // and hostable (pinned in levels.test.ts); these pin the hash picks on the
-    // actual boards so a generator change cannot silently move them.
-    expect(pickHiddenTubes(51, realTubes(51))).toEqual([5, 9, 8])
-    expect(pickHiddenTubes(70, realTubes(70))).toEqual([6, 12, 7, 9, 5])
-    expect(pickHiddenTubes(85, realTubes(85))).toEqual([7, 1, 4, 11, 8, 2, 12, 3, 9])
-    expect(pickHiddenTubes(100, realTubes(100))).toEqual([
-      11, 7, 2, 6, 10, 4, 12, 1, 9, 0, 3,
-    ])
+    // Four anchors of the 3→11 schedule, on the actual boards, so a generator
+    // change cannot silently move them.
+    expect(pickHiddenTubes(51, realTubes(51))).toEqual([3,  7,  6])
+    expect(pickHiddenTubes(70, realTubes(70))).toEqual([4,  10,  5,  7,  3])
+    expect(pickHiddenTubes(85, realTubes(85))).toEqual([5,  0,  3,  9,  6,  1,  10,  2,  7])
+    expect(pickHiddenTubes(100, realTubes(100))).toEqual([9,  6,  2,  5,  8,  4,  10,  1,  7,  0,  3])
   })
 
   it('hosts every configured vial on every climb level, with its top revealed', () => {
     // The four anchors above pin the hash picks; this closes the content gate
     // over the whole tier: no level may ask for more concealed vials than its
     // board can supply, and every pick must leave a seen top above its secrets.
-    for (let level = CLIMB_FROM; level <= CLIMB_LAST; level++) {
+    for (let level = 51; level <= 100; level++) {
       const tubes = realTubes(level)
       const picks = pickHiddenTubes(level, tubes)
       expect(picks, `level ${level} host count`).toHaveLength(hiddenTubeCount(level))
@@ -148,11 +141,11 @@ describe('per-level pick (integration pin)', () => {
   it('never hides the late padlock: it is an empty spare', () => {
     // Ticket 24: from level 51 the padlock sits on the empty appended spare,
     // which has nothing to conceal, so it is never a candidate nor a ? vial.
-    for (const level of [CLIMB_FROM, 100]) {
+    for (const level of [51, 100]) {
       const { board, solution } = generateLevel(level)
       const withSpare = addExtraSpare(createGame(board))
       const appended = withSpare.tubes.length - 1
-      const sealed = sealSpares(withSpare, solution, level, appended).tubes
+      const sealed = sealSpares(withSpare, solution, appended).tubes
       expect(sealed[appended], `level ${level} lock`).toEqual({ colors: [], open: 0 })
 
       const picks = pickHiddenTubes(level, sealed)

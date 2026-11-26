@@ -1,9 +1,8 @@
 /**
  * A small deterministic solver for generated boards (ticket 25).
  *
- * Levels from `SHUFFLE_FROM` are seeded shuffles rather than reverse
- * scrambles, so they are solvable by verification: this solver finds a
- * solution once at build time, and tests replay it to a win. It only has to
+ * Every level is a seeded shuffle (ticket 29), so it is solvable by
+ * verification: this solver finds a solution once at build time, and tests replay it to a win. It only has to
  * find *a* solution, not the shortest one.
  *
  * Pure and deterministic: a fixed move order, a node budget instead of a clock,

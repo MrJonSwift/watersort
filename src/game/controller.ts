@@ -22,7 +22,6 @@ import {
   EXTRA_SPARE_FROM,
   MAX_LEVEL,
   MAX_TWO_ROW_TUBES,
-  SPARES_LOCK_FROM,
   clampLevel,
 } from './levels'
 import type { Progress } from './progress'
@@ -229,34 +228,21 @@ export function createController(ports: ControllerPorts): Controller {
   let usedDraws: number[] = []
 
   /**
-   * Build the board for a level, then apply the level's presentation
-   * policies as game decisions: at or above `SPARES_LOCK_FROM` only the empty
-   * tubes the solution never pours into start sealed (ticket 14, refining
-   * ticket 09), from `EXTRA_SPARE_FROM` an extra empty appended after generation
-   * gives every level a guaranteed optional padlock (ticket 18), and at or above
-   * `HIDDEN_FROM` a seeded pick of the tubes holding colours starts concealed
-   * (ticket 10). From `CLIMB_FROM`, `sealSpares` locks that appended spare —
-   * empty and never a solution destination (ticket 24) — while the generated
-   * spares stay plain; the level number passed through is what keeps 1–50 on
-   * the empty-only rule. The extra spare only goes on a board that still fits in
-   * two seven-wide rows on a phone; the 11-colour board is 13 tubes, so it
-   * always has room for the appended spare. Neither happens in the wiring; the
-   * controller owns the session.
+   * Build the board for a level, then apply the level's presentation policies
+   * as game decisions: from `EXTRA_SPARE_FROM` an empty spare is appended after
+   * generation and padlocked (`sealSpares`), so it is never on the solution
+   * path, and from `HIDDEN_FROM` a seeded pick of the tubes holding colours
+   * starts concealed. The spare only goes on a board that still fits in two
+   * seven-wide rows; the 11-colour board is 13 tubes, so it always fits.
+   * Neither happens in the wiring; the controller owns the session.
    */
   function buildBoard(next: number): GameState {
     const { board, solution } = ports.board(next)
     const built = createGame(board)
     const append = next >= EXTRA_SPARE_FROM && built.tubes.length < MAX_TWO_ROW_TUBES
-    const withSpare = append ? addExtraSpare(built) : built
-    const sealed =
-      next >= SPARES_LOCK_FROM
-        ? sealSpares(
-            withSpare,
-            solution,
-            next,
-            append ? withSpare.tubes.length - 1 : undefined,
-          )
-        : withSpare
+    const sealed = append
+      ? sealSpares(addExtraSpare(built), solution, built.tubes.length)
+      : built
     const hidden = pickHiddenTubes(next, sealed.tubes)
     return hidden.length > 0 ? hideBlocks(sealed, hidden) : sealed
   }
