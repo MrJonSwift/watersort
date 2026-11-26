@@ -35,7 +35,7 @@ describe('parseLevelJump', () => {
 
   it('clamps out-of-range numbers to the real board range', () => {
     expect(parseLevelJump('?level=0', MAX)).toBe(1)
-    expect(parseLevelJump('?level=999', MAX)).toBe(MAX)
+    expect(parseLevelJump('?level=99999', MAX)).toBe(MAX)
     expect(parseLevelJump('?level=007', MAX)).toBe(7)
   })
 

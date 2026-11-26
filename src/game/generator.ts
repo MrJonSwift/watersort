@@ -1,15 +1,39 @@
 /**
  * Seeded level generator.
  *
- * A board is built by starting from the solved position and applying legal
- * *reverse* moves. Every reverse move is recorded as its forward inverse, so
- * replaying that list in reverse order solves the board by construction; no
- * search or solver runs at runtime.
+ * Levels 1–100 are built by starting from the solved position and applying
+ * legal *reverse* moves. Every reverse move is recorded as its forward
+ * inverse, so replaying that list in reverse order solves the board by
+ * construction.
+ *
+ * From `SHUFFLE_FROM` (ticket 25) a board is a seeded shuffle of full colour
+ * tubes instead, and solvability is proven by verification: the bundled
+ * solver (`solver.ts`) finds a solution at build time, and tests replay it to
+ * a win. Difficulty is measured, not assumed — candidates are scored by
+ * `difficulty.ts` and the one nearest the level's target is kept.
  *
  * Everything here is pure: no DOM, no storage, no clock and no `Math.random`.
  * The same level number yields the same board on every device.
  */
-import { CLIMB_FROM, LATE_BOARD_MIN_MULTI, clampLevel, levelConfig, type LevelConfig } from './levels'
+import {
+  CLIMB_FROM,
+  LATE_BOARD_MIN_MULTI,
+  SCORE_MAX_STEPS,
+  SCORE_PLAYOUTS,
+  SHUFFLE_CANDIDATES,
+  SHUFFLE_COLORS,
+  SHUFFLE_FROM,
+  SHUFFLE_MAX_DRAWS,
+  SHUFFLE_SPARES,
+  SOLVE_NODE_BUDGET,
+  clampLevel,
+  levelConfig,
+  shuffleMix,
+  shuffleTarget,
+  type LevelConfig,
+} from './levels'
+import { mulberry32, randomWinRate } from './difficulty'
+import { solve } from './solver'
 import {
   DEFAULT_CAPACITY,
   isComplete,
@@ -32,18 +56,6 @@ export interface Level {
 const ATTEMPTS = 64
 /** How much easier the single fallback pass is. */
 const EASIER_STEP = 2
-
-/** Deterministic, tiny PRNG (mulberry32). Same output on every platform. */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /** Mix the level, its scramble and the attempt number into an attempt seed. */
 function seedFor(level: number, scramble: number, attempt: number): number {
@@ -251,16 +263,56 @@ function search(config: LevelConfig, level: number): Search {
 }
 
 /**
- * Build the board for a numbered level.
- *
- * Seeds are derived from the level number, so the same level is always the same
- * board. If no attempt passes the mixing gate, the whole search runs once more
- * with `scramble - 2`: a slightly easier level beats a hang. If that also
- * fails, the last legal, solvable board is returned rather than throwing —
- * solvability is a hard requirement, how well mixed a board looks is not.
+ * Build the board for a numbered level. Seeds are derived from the level
+ * number, so the same level is always the same board: levels 1–100 by reverse
+ * scramble (`buildReverse`), from `SHUFFLE_FROM` by seeded shuffle and solver
+ * (`buildShuffled`).
  */
 export function generateLevel(level: number): Level {
+  return buildLevel(level).level
+}
+
+/** How a level was built — what the probe and the budget tests read. */
+export interface BuildReport {
+  level: Level
+  /** Transpositions used, `null` for a full shuffle; absent below `SHUFFLE_FROM`. */
+  mix?: number | null
+  /** Random-win score of the kept board (shuffled tier only). */
+  score?: number
+  /** Boards drawn, including ones rejected for a complete tube. */
+  draws?: number
+  /** Candidates handed to the solver. */
+  solves?: number
+  /** Solver states expanded across those candidates. */
+  nodes?: number
+  /** True when no candidate solved and the reverse-scramble fallback was used. */
+  fallback?: boolean
+}
+
+/**
+ * Build a level and say how. `generateLevel` is the game's entry point; this
+ * variant also reports the shuffled tier's choices for tests and the probe.
+ * `solveBudget` exists so a test can starve the solver and prove the fallback;
+ * the game always uses the pinned `SOLVE_NODE_BUDGET`.
+ */
+export function buildLevel(
+  level: number,
+  solveBudget: number = SOLVE_NODE_BUDGET,
+): BuildReport {
   const safeLevel = clampLevel(level)
+  if (safeLevel >= SHUFFLE_FROM) return buildShuffled(safeLevel, solveBudget)
+  return { level: buildReverse(safeLevel) }
+}
+
+/**
+ * The reverse-scramble path (levels 1–100, and the shuffled tier's fallback).
+ *
+ * If no attempt passes the mixing gate, the whole search runs once more with
+ * `scramble - 2`: a slightly easier level beats a hang. If that also fails, the
+ * last legal, solvable board is returned rather than throwing — solvability is
+ * a hard requirement, how well mixed a board looks is not.
+ */
+function buildReverse(safeLevel: number): Level {
   const config = levelConfig(safeLevel)
 
   const primary = search(config, safeLevel)
@@ -278,4 +330,130 @@ export function generateLevel(level: number): Level {
 
   // Degenerate config (no colours, no spare tubes): nothing can be built.
   return { board: [], solution: [] }
+}
+
+/** Seed for draw `index` of a shuffled level; a different stream from `seedFor`. */
+function shuffleSeed(level: number, index: number): number {
+  let hash = Math.imul(Math.trunc(level) + 1, 0x27d4eb2f)
+  hash = Math.imul(hash ^ 0x5bd1e995, 0x85ebca6b)
+  hash = Math.imul(hash ^ (index + 1), 0xc2b2ae35)
+  hash ^= hash >>> 16
+  return hash >>> 0
+}
+
+/**
+ * One seeded shuffled board: `colors` full tubes mixed by `mix` transpositions
+ * (each swaps two units in different tubes), or a full Fisher–Yates shuffle
+ * when `mix` is `null`, followed by `spares` empty tubes.
+ */
+export function shuffledBoard(
+  colors: number,
+  spares: number,
+  mix: number | null,
+  seed: number,
+  capacity: number = DEFAULT_CAPACITY,
+): ColorId[][] {
+  const units: ColorId[] = []
+  for (let color = 0; color < colors; color++) {
+    for (let k = 0; k < capacity; k++) units.push(color)
+  }
+  const rng = mulberry32(seed)
+  const total = units.length
+  if (mix === null) {
+    for (let i = total - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[units[i], units[j]] = [units[j], units[i]]
+    }
+  } else if (colors > 1) {
+    for (let step = 0; step < mix; step++) {
+      const a = Math.floor(rng() * total)
+      // Pick b among the units outside a's tube.
+      let b = Math.floor(rng() * (total - capacity))
+      const tubeA = Math.floor(a / capacity)
+      if (Math.floor(b / capacity) >= tubeA) b += capacity
+      ;[units[a], units[b]] = [units[b], units[a]]
+    }
+  }
+  const board: ColorId[][] = []
+  for (let tube = 0; tube < colors; tube++) {
+    board.push(units.slice(tube * capacity, (tube + 1) * capacity))
+  }
+  for (let i = 0; i < spares; i++) board.push([])
+  return board
+}
+
+function hasCompleteTube(board: readonly (readonly ColorId[])[], capacity: number): boolean {
+  return board.some(
+    (tube) => tube.length === capacity && tube.every((color) => color === tube[0]),
+  )
+}
+
+/** Distance from the target in log space, so 0.02 vs 0.01 counts like 0.5 vs 0.25. */
+function targetDistance(score: number, target: number): number {
+  const floor = 1 / SCORE_PLAYOUTS
+  return Math.abs(Math.log(Math.max(score, floor) / Math.max(target, floor)))
+}
+
+/**
+ * The shuffled tier (ticket 25): draw boards with no complete tube until
+ * `SHUFFLE_CANDIDATES` are scored, then try them nearest-the-target first and
+ * keep the first one the solver proves. On the plateau the target sits below
+ * most candidates, so "nearest" is the hardest. A candidate the solver cannot
+ * finish within its budget is skipped; if none solves, the level falls back to
+ * the level-100 reverse-scramble config with this level's seed — never a hang,
+ * never an unsolvable board.
+ */
+function buildShuffled(safeLevel: number, solveBudget: number): BuildReport {
+  const capacity = DEFAULT_CAPACITY
+  const mix = shuffleMix(safeLevel)
+  const target = shuffleTarget(safeLevel)
+
+  const candidates: { board: ColorId[][]; score: number; distance: number }[] = []
+  let draws = 0
+  while (candidates.length < SHUFFLE_CANDIDATES && draws < SHUFFLE_MAX_DRAWS) {
+    const seed = shuffleSeed(safeLevel, draws)
+    draws++
+    const board = shuffledBoard(SHUFFLE_COLORS, SHUFFLE_SPARES, mix, seed, capacity)
+    if (hasCompleteTube(board, capacity)) continue
+    const score = randomWinRate(board, {
+      playouts: SCORE_PLAYOUTS,
+      maxSteps: SCORE_MAX_STEPS,
+      seed,
+      capacity,
+    })
+    candidates.push({ board, score, distance: targetDistance(score, target) })
+  }
+
+  // Nearest first; ties go to the harder board, then to the earlier draw.
+  const order = candidates
+    .map((candidate, index) => ({ ...candidate, index }))
+    .sort((a, b) => a.distance - b.distance || a.score - b.score || a.index - b.index)
+
+  let solves = 0
+  let nodes = 0
+  for (const candidate of order) {
+    solves++
+    const result = solve(candidate.board, solveBudget, capacity)
+    nodes += result.nodes
+    if (result.solution) {
+      return {
+        level: { board: candidate.board, solution: result.solution },
+        mix,
+        score: candidate.score,
+        draws,
+        solves,
+        nodes,
+        fallback: false,
+      }
+    }
+  }
+
+  return {
+    level: buildReverse(safeLevel),
+    mix,
+    draws,
+    solves,
+    nodes,
+    fallback: true,
+  }
 }

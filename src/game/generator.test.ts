@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildLevel,
   generateBoard,
   generateLevel,
+  shuffledBoard,
+  type BuildReport,
   type Level,
 } from './generator'
 import {
   CLIMB_FROM,
+  CLIMB_LAST,
   LATE_BOARD_MIN_MULTI,
   LEVELS,
   MAX_LEVEL,
   MAX_TWO_ROW_TUBES,
+  SHUFFLE_CANDIDATES,
+  SHUFFLE_COLORS,
+  SHUFFLE_FROM,
+  SHUFFLE_SPARES,
+  SOLVE_NODE_BUDGET,
   SPARES_LOCK_FROM,
   hiddenTubeCount,
   levelConfig,
@@ -157,13 +166,13 @@ describe('generateBoard', () => {
 
 describe('generateLevel', () => {
   it('is deterministic for a level number', () => {
-    for (let level = 1; level <= MAX_LEVEL; level++) {
+    for (let level = 1; level <= CLIMB_LAST; level++) {
       expect(generateLevel(level)).toEqual(generateLevel(level))
     }
   })
 
   it('gives every level a legal, solvable board that clears the quality gate', () => {
-    for (let level = 1; level <= MAX_LEVEL; level++) {
+    for (let level = 1; level <= CLIMB_LAST; level++) {
       const config = levelConfig(level)
       const board = generateLevel(level)
       expectHardRequirements(board, config)
@@ -200,7 +209,7 @@ describe('generateLevel', () => {
     // dropped so a solution can never contain a move after the win. The replay
     // in `expectHardRequirements` fails if a move lands after the win, because
     // a won game ignores taps.
-    for (let level = 1; level <= MAX_LEVEL; level++) {
+    for (let level = 1; level <= CLIMB_LAST; level++) {
       const { solution } = generateLevel(level)
       expect(solution.length).toBeGreaterThan(0)
       expect(solution.length).toBeLessThanOrEqual(levelConfig(level).scramble)
@@ -221,14 +230,14 @@ describe('generateLevel', () => {
 
   it('gives every level a different board', () => {
     const boards = new Set(
-      Array.from({ length: MAX_LEVEL }, (_, i) => JSON.stringify(generateLevel(i + 1).board)),
+      Array.from({ length: CLIMB_LAST }, (_, i) => JSON.stringify(generateLevel(i + 1).board)),
     )
-    expect(boards.size).toBe(MAX_LEVEL)
+    expect(boards.size).toBe(CLIMB_LAST)
   })
 
   it('clamps out-of-range level numbers', () => {
     expect(generateLevel(0)).toEqual(generateLevel(1))
-    expect(generateLevel(999)).toEqual(generateLevel(MAX_LEVEL))
+    expect(generateLevel(MAX_LEVEL + 50)).toEqual(generateLevel(MAX_LEVEL))
   })
 
   it('replays through a real lock when a solution leaves an empty unused', () => {
@@ -274,7 +283,7 @@ describe('generateLevel', () => {
 
   it('generation still ships exactly its configured colours and two spares', () => {
     // The ticket-18 spare is appended by the controller, never generated.
-    for (let level = 1; level <= MAX_LEVEL; level++) {
+    for (let level = 1; level <= CLIMB_LAST; level++) {
       const config = levelConfig(level)
       expect(generateLevel(level).board).toHaveLength(config.colors + config.emptyTubes)
     }
@@ -285,7 +294,7 @@ describe('generateLevel', () => {
     // gate-passing board is accepted only with a solution-unused spare and at
     // least eleven multi-unit tubes. At 11 colours (ticket 24) the generated
     // board is 13 tubes; the controller appends the empty 14th.
-    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+    for (let level = CLIMB_FROM; level <= CLIMB_LAST; level++) {
       const { board, solution } = generateLevel(level)
       expect(board, `level ${level}`).toHaveLength(MAX_TWO_ROW_TUBES - 1)
 
@@ -313,7 +322,7 @@ describe('generateLevel', () => {
     // Ticket 24 supersedes ticket 22's coloured padding: from level 51 the
     // padlock sits on the empty spare appended after generation. Unlocking it
     // reveals an empty tube, and a clean solve wins with it still shut.
-    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+    for (let level = CLIMB_FROM; level <= CLIMB_LAST; level++) {
       const { board, solution } = generateLevel(level)
       const withSpare = addExtraSpare(createGame(board))
       const appended = withSpare.tubes.length - 1
@@ -340,7 +349,7 @@ describe('generateLevel', () => {
       const hidden = pickHiddenTubes(level, sealed.tubes)
       expect(hidden, `level ${level} hidden picks`).toHaveLength(hiddenTubeCount(level))
       expect(hidden, `level ${level} lock not hidden`).not.toContain(appended)
-      if (level === MAX_LEVEL) expect(hidden).toHaveLength(11)
+      if (level === CLIMB_LAST) expect(hidden).toHaveLength(11)
 
       const withHidden = hideBlocks(sealed, hidden)
       const finished = replayMoves(withHidden, { board, solution })
@@ -370,11 +379,159 @@ describe('generateLevel', () => {
       2421887273, 1028740209, 3106196581, 1601882599, 1395019001,
     ]
     const first = 46
-    expect(fingerprints).toHaveLength(MAX_LEVEL - first + 1)
-    for (let level = first; level <= MAX_LEVEL; level++) {
+    expect(fingerprints).toHaveLength(CLIMB_LAST - first + 1)
+    for (let level = first; level <= CLIMB_LAST; level++) {
       expect(boardHash(generateLevel(level).board), `level ${level}`).toBe(
         fingerprints[level - first],
       )
     }
+  })
+})
+
+/**
+ * The shuffled tier (ticket 25). Levels from `SHUFFLE_FROM` are seeded full
+ * shuffles proven solvable by the bundled solver; these tests replay each
+ * returned solution through the real rules.
+ */
+describe('shuffled tier', () => {
+  /** 101–130, every 50th level to 1000, and the last level. */
+  const SAMPLE: number[] = []
+  for (let level = SHUFFLE_FROM; level <= 130; level++) SAMPLE.push(level)
+  for (let level = 150; level <= 1000; level += 50) SAMPLE.push(level)
+  SAMPLE.push(MAX_LEVEL)
+
+  const built = new Map<number, BuildReport>()
+  function report(level: number): BuildReport {
+    let found = built.get(level)
+    if (!found) {
+      found = buildLevel(level)
+      built.set(level, found)
+    }
+    return found
+  }
+
+  it('keeps the first four shuffled boards', () => {
+    // Snapshots of the first boards past the frozen range. A change to the
+    // mix, seed stream, scorer or selection rule re-rolls them: a content
+    // decision, made in a ticket with this test updated in the same commit.
+    const shipped: Array<[number, string]> = [
+      [101, '[[0,1,0,0],[1,1,6,1],[9,2,2,2],[3,3,3,7],[4,8,4,4],[5,5,9,5],[8,6,10,6],[7,3,7,7],[0,8,8,2],[9,9,5,4],[10,10,10,6],[],[]]'],
+      [102, '[[0,0,7,0],[1,1,1,5],[10,4,2,2],[3,8,3,3],[4,9,4,2],[5,5,5,7],[6,6,2,6],[0,1,7,7],[8,6,8,3],[9,4,9,9],[8,10,10,10],[],[]]'],
+      [103, '[[0,8,0,3],[6,1,9,1],[2,2,2,9],[3,0,3,3],[4,4,5,4],[5,4,5,9],[6,6,1,6],[2,7,10,7],[8,8,8,0],[9,5,7,1],[7,10,10,10],[],[]]'],
+      [104, '[[0,7,0,0],[7,1,3,1],[2,2,2,9],[3,3,3,5],[4,2,4,8],[5,5,5,1],[10,6,6,6],[7,0,7,1],[8,10,8,8],[9,4,9,9],[10,6,4,10],[],[]]'],
+    ]
+    for (const [level, board] of shipped) {
+      expect(JSON.stringify(generateLevel(level).board), `level ${level}`).toBe(board)
+    }
+  })
+
+  it('is deterministic on the sample', () => {
+    for (const level of SAMPLE) {
+      expect(buildLevel(level), `level ${level}`).toEqual(report(level))
+    }
+  })
+
+  it('ships eleven full colour tubes, two empties and no complete tube, solved by replay', () => {
+    for (const level of SAMPLE) {
+      const { level: built, fallback } = report(level)
+      const { board, solution } = built
+      expect(fallback, `level ${level} fallback`).toBe(false)
+      expect(board, `level ${level}`).toHaveLength(SHUFFLE_COLORS + SHUFFLE_SPARES)
+      expect(board.slice(0, SHUFFLE_COLORS).every((tube) => tube.length === CAP)).toBe(true)
+      expect(board.slice(SHUFFLE_COLORS).every((tube) => tube.length === 0)).toBe(true)
+      expectHardRequirements(built, levelConfig(level))
+
+      // The solver ran on the 13 generated tubes, so it never names the
+      // appended spare the controller adds as the 14th.
+      for (const move of solution) {
+        expect(move.from, `level ${level}`).toBeLessThan(board.length)
+        expect(move.to, `level ${level}`).toBeLessThan(board.length)
+      }
+    }
+  })
+
+  it('locks the appended empty spare and still wins with eleven hidden vials and no question', () => {
+    // Ticket 24's no-toll promise, extended to the shuffled tier: the level
+    // wins with the padlock sealed, every colour tube concealed, and the lock
+    // ending as it started.
+    for (const level of SAMPLE) {
+      const { board, solution } = report(level).level
+      const withSpare = addExtraSpare(createGame(board))
+      const appended = withSpare.tubes.length - 1
+      expect(withSpare.tubes).toHaveLength(MAX_TWO_ROW_TUBES)
+      const sealed = sealSpares(withSpare, solution, level, appended)
+
+      const locks = sealed.tubes.filter((tube) => tube.open === 0)
+      expect(locks, `level ${level} lock count`).toHaveLength(1)
+      expect(sealed.tubes[appended]).toEqual({ colors: [], open: 0 })
+
+      const hidden = pickHiddenTubes(level, sealed.tubes)
+      expect(hiddenTubeCount(level)).toBe(11)
+      expect(hidden, `level ${level} hidden picks`).toHaveLength(11)
+      expect(hidden).not.toContain(appended)
+      const concealed = hideBlocks(sealed, hidden)
+      // Full tubes: three concealed units under each seen top, 33 in all.
+      expect(concealed.tubes.reduce((sum, tube) => sum + (tube.hidden ?? 0), 0)).toBe(33)
+
+      const finished = replayMoves(concealed, { board, solution })
+      expect(isWon(finished), `level ${level} question-free win`).toBe(true)
+      expect(finished.tubes[appended]).toEqual({ colors: [], open: 0 })
+    }
+  })
+
+  it('stays inside its solver budget without a fallback across the sample', () => {
+    for (const level of SAMPLE) {
+      const { nodes, solves, draws } = report(level)
+      expect(solves, `level ${level}`).toBeGreaterThanOrEqual(1)
+      expect(nodes as number, `level ${level}`).toBeLessThanOrEqual(
+        (solves as number) * SOLVE_NODE_BUDGET,
+      )
+      expect(draws as number, `level ${level}`).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  it('builds any sampled level in under 60ms (the per-level build budget)', () => {
+    // Node is the reference; a phone is roughly 3–5× slower, and a build runs
+    // on start/next, never per frame. The probe's warm worst case over
+    // 101–1000 was well under half this budget.
+    buildLevel(SHUFFLE_FROM) // warm the JIT, as a running app would be
+    let worst = 0
+    for (const level of SAMPLE) {
+      const start = performance.now()
+      buildLevel(level)
+      worst = Math.max(worst, performance.now() - start)
+    }
+    expect(worst).toBeLessThan(60)
+  })
+
+  it('falls back to the level-100 reverse scramble when no candidate solves', () => {
+    // Starve the solver: every candidate is skipped, and the level still ships
+    // a solvable, gate-shaped board seeded by its own number instead of hanging.
+    for (const level of [SHUFFLE_FROM, 777]) {
+      const starved = buildLevel(level, 0)
+      expect(starved.fallback, `level ${level}`).toBe(true)
+      expect(starved.solves).toBe(SHUFFLE_CANDIDATES)
+      expectHardRequirements(starved.level, levelConfig(level))
+      expect(starved.level.board).toHaveLength(MAX_TWO_ROW_TUBES - 1)
+      expect(starved.level).toEqual(buildLevel(level, 0).level)
+    }
+    // Different levels fall back to different boards.
+    expect(buildLevel(SHUFFLE_FROM, 0).level).not.toEqual(buildLevel(777, 0).level)
+  })
+
+  it('mixes a sorted board by transposition and keeps every unit', () => {
+    const sorted = shuffledBoard(3, 2, 0, 1)
+    expect(sorted).toEqual([[0, 0, 0, 0], [1, 1, 1, 1], [2, 2, 2, 2], [], []])
+    for (const mix of [1, 5, null] as const) {
+      const board = shuffledBoard(11, 2, mix, 17)
+      const counts = new Map<number, number>()
+      for (const tube of board) for (const color of tube) counts.set(color, (counts.get(color) ?? 0) + 1)
+      expect([...counts.values()].every((count) => count === CAP)).toBe(true)
+      expect(board.slice(0, 11).every((tube) => tube.length === CAP)).toBe(true)
+    }
+    // One transposition moves exactly two units between two different tubes.
+    const once = shuffledBoard(11, 2, 1, 23)
+    const changed = once.filter((tube, index) => tube.some((color) => color !== index))
+    expect(changed).toHaveLength(2)
   })
 })

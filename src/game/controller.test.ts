@@ -13,7 +13,7 @@ import {
 import type { Challenge } from './challenges'
 import { generateLevel } from './generator'
 import { pickHiddenTubes } from './hidden'
-import { CLIMB_FROM, EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
+import { CLIMB_FROM, CLIMB_LAST, EXTRA_SPARE_FROM, HIDDEN_FROM, MAX_LEVEL, SPARES_LOCK_FROM } from './levels'
 import { DEFAULT_PROGRESS, type Progress } from './progress'
 import { pour } from './rules'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
@@ -1113,11 +1113,11 @@ describe('appended empty lock (ticket 24)', () => {
   })
 
   it('level 100 hosts eleven question-mark vials and none is the empty lock', () => {
-    const final = generateLevel(MAX_LEVEL)
+    const final = generateLevel(CLIMB_LAST)
     const h = harness(
       final.board,
       {},
-      { level: MAX_LEVEL, highest: MAX_LEVEL },
+      { level: CLIMB_LAST, highest: CLIMB_LAST },
       undefined,
       final.solution,
     )

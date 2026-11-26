@@ -71,17 +71,20 @@ export const LEVELS: readonly LevelConfig[] = [
 
 /**
  * The last level people can reach. Levels 1–40 are the hand-tuned curve above;
- * 41–`MAX_LEVEL` are derived by `levelConfig`, so extending the game is a
- * one-line change here rather than a new row in a table. A procedural ramp is
+ * 41–100 are derived by `levelConfig`, and from `SHUFFLE_FROM` the shuffled
+ * tier's ramp (below) is derived from the level number too, so extending the
+ * game is a one-line change here rather than a new row in a table. Boards are
  * bounded by the phone (see `MAX_TWO_ROW_TUBES`), so "infinite" means unbounded
  * in *level number*, not in board size — past the colour ceiling the ramp
- * climbs through what the player can see rather than a bigger board.
+ * climbs through how mixed the board is, measured by the solver-backed scorer.
  *
  * Ticket 21 raised this from 50 to 100. Levels 51–100 are the back-loaded
  * climb: 11 colours, 14 tubes and a fixed gate-capped scramble, with the number
- * of concealed vials rising 3 → 11 (ticket 24).
+ * of concealed vials rising 3 → 11 (ticket 24). Ticket 25 raises it to 9999:
+ * from `SHUFFLE_FROM` boards are seeded shuffles verified by the solver, and
+ * the ramp settles into a plateau, so the level number is effectively unbounded.
  */
-export const MAX_LEVEL = 100
+export const MAX_LEVEL = 9999
 
 /** The first derived level. Everything up to 40 is the validated hand-tuned curve. */
 export const EXPERT_FROM = 41
@@ -116,6 +119,12 @@ const EXPERT_EMPTY_TUBES = 2
  * number is what makes 1–50 byte-for-byte frozen.
  */
 export const CLIMB_FROM = 51
+
+/**
+ * The last reverse-scrambled level. Levels 1–100 are frozen byte-for-byte
+ * (ticket 25); this number, not `MAX_LEVEL`, is what their schedules end on.
+ */
+export const CLIMB_LAST = 100
 
 /**
  * Scramble ceiling for the climb. The unchanged quality gate binds well below
@@ -205,7 +214,7 @@ const CLIMB_HIDDEN_ANCHORS: readonly (readonly [level: number, count: number])[]
   [CLIMB_FROM, 3],
   [70, 5],
   [85, 9],
-  [MAX_LEVEL, 11],
+  [CLIMB_LAST, 11],
 ]
 
 function climbHiddenCount(level: number): number {
@@ -238,6 +247,11 @@ export function clampLevel(level: number): number {
  * deterministic, so the same level always makes the same board, and raising
  * `MAX_LEVEL` is all that is needed to add more levels.
  *
+ * From `SHUFFLE_FROM` the generator builds a shuffled board instead and reads
+ * its ramp from `shuffleMix`/`shuffleTarget`; the config returned there is the
+ * level-100 one, which supplies the board shape (11 colours, two spares) and
+ * the reverse-scramble fallback if no shuffled candidate solves.
+ *
  * Clamping (rather than throwing) keeps a corrupt save or a bad call from
  * taking the app down. Progress is clamped independently on load.
  */
@@ -256,4 +270,99 @@ export function levelConfig(level: number): LevelConfig {
   const scramble =
     EXPERT_BASE_SCRAMBLE + (since % EXPERT_SCRAMBLE_CYCLE) * EXPERT_SCRAMBLE_STEP
   return { colors: EXPERT_MAX_COLORS, emptyTubes: EXPERT_EMPTY_TUBES, scramble }
+}
+
+/**
+ * First level of the shuffled tier (ticket 25). From here a board is a seeded
+ * shuffle of eleven full colour tubes plus two empties, proven solvable by the
+ * bundled solver rather than by construction. Gating on the level number is
+ * what keeps 1–100 byte-for-byte frozen.
+ */
+export const SHUFFLE_FROM = CLIMB_LAST + 1
+
+/** Colours on a shuffled board: every colour tube starts full. */
+export const SHUFFLE_COLORS = EXPERT_MAX_COLORS
+
+/** Generated empty spares on a shuffled board; the controller appends a third. */
+export const SHUFFLE_SPARES = EXPERT_EMPTY_TUBES
+
+/**
+ * The difficulty target, as a random-playout win rate (`difficulty.ts`).
+ * Measured with the shipped scorer settings below: levels 51–100 have a median
+ * of 0.635 and a full eleven-colour shuffle about 0.03. Level 101 starts a
+ * little harder than that median, the target falls to the full-shuffle median
+ * by 400, then selection carries it to the plateau by 600, where it holds.
+ * Between anchors the target interpolates in log space, so the ramp is a
+ * smooth geometric fall rather than a straight line that would rush the start.
+ */
+export const SHUFFLE_TARGET_ANCHORS: readonly (readonly [level: number, winRate: number])[] = [
+  [SHUFFLE_FROM, 0.5],
+  [400, 0.03],
+  [600, 0.015],
+]
+
+/**
+ * How many seeded transpositions mix the sorted board, by level. A swap
+ * exchanges two units in different colour tubes; low counts leave a board
+ * close to sorted. From `SHUFFLE_FULL_FROM` the board is a full Fisher–Yates
+ * shuffle and difficulty comes from selection alone.
+ */
+export const SHUFFLE_MIX_ANCHORS: readonly (readonly [level: number, swaps: number])[] = [
+  [SHUFFLE_FROM, 9],
+  [400, 24],
+]
+
+/** From this level the board is a full shuffle, not a counted mix. */
+export const SHUFFLE_FULL_FROM = 400
+
+/** Scored candidates per level; the one nearest the target is kept. */
+export const SHUFFLE_CANDIDATES = 6
+
+/**
+ * Draws allowed per level, including boards rejected for starting with a
+ * complete tube. Low mixes reject often; this bound keeps a build finite.
+ */
+export const SHUFFLE_MAX_DRAWS = 256
+
+/** Random playouts per candidate score, and the steps after which one is lost. */
+export const SCORE_PLAYOUTS = 100
+export const SCORE_MAX_STEPS = 300
+
+/** States the solver may expand on one candidate before it is skipped. */
+export const SOLVE_NODE_BUDGET = 5000
+
+function interpolate(
+  anchors: readonly (readonly [number, number])[],
+  level: number,
+  log: boolean,
+): number {
+  const [firstLevel, firstValue] = anchors[0]
+  if (level <= firstLevel) return firstValue
+  for (let i = 1; i < anchors.length; i++) {
+    const [toLevel, toValue] = anchors[i]
+    if (level === toLevel) return toValue
+    if (level < toLevel) {
+      const [fromLevel, fromValue] = anchors[i - 1]
+      const t = (level - fromLevel) / (toLevel - fromLevel)
+      return log
+        ? Math.exp(Math.log(fromValue) + t * (Math.log(toValue) - Math.log(fromValue)))
+        : fromValue + t * (toValue - fromValue)
+    }
+  }
+  return anchors[anchors.length - 1][1]
+}
+
+/** The target random-win rate for a shuffled level (non-increasing, then flat). */
+export function shuffleTarget(level: number): number {
+  return interpolate(SHUFFLE_TARGET_ANCHORS, clampLevel(level), true)
+}
+
+/**
+ * Transpositions for a shuffled level, or `null` for a full shuffle. Rounded
+ * so the board depends only on integers.
+ */
+export function shuffleMix(level: number): number | null {
+  const safe = clampLevel(level)
+  if (safe >= SHUFFLE_FULL_FROM) return null
+  return Math.round(interpolate(SHUFFLE_MIX_ANCHORS, safe, false))
 }

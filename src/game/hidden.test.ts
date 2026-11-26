@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pickHiddenTubes } from './hidden'
-import { CLIMB_FROM, HIDDEN_FROM, MAX_LEVEL, hiddenTubeCount } from './levels'
+import { CLIMB_FROM, CLIMB_LAST, HIDDEN_FROM, hiddenTubeCount } from './levels'
 import { generateLevel } from './generator'
 import { addExtraSpare, createGame, hideBlocks, sealSpares } from './state'
 import type { Tube } from './types'
@@ -127,7 +127,7 @@ describe('per-level pick (integration pin)', () => {
     // The four anchors above pin the hash picks; this closes the content gate
     // over the whole tier: no level may ask for more concealed vials than its
     // board can supply, and every pick must leave a seen top above its secrets.
-    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+    for (let level = CLIMB_FROM; level <= CLIMB_LAST; level++) {
       const tubes = realTubes(level)
       const picks = pickHiddenTubes(level, tubes)
       expect(picks, `level ${level} host count`).toHaveLength(hiddenTubeCount(level))

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CLIMB_FROM,
+  CLIMB_LAST,
   CLIMB_SCRAMBLE,
   EXPERT_FROM,
   EXTRA_SPARE_FROM,
@@ -8,10 +9,25 @@ import {
   LEVELS,
   MAX_LEVEL,
   MAX_TWO_ROW_TUBES,
+  SCORE_MAX_STEPS,
+  SCORE_PLAYOUTS,
+  SHUFFLE_CANDIDATES,
+  SHUFFLE_COLORS,
+  SHUFFLE_FROM,
+  SHUFFLE_FULL_FROM,
+  SHUFFLE_MAX_DRAWS,
+  SHUFFLE_MIX_ANCHORS,
+  SHUFFLE_SPARES,
+  SHUFFLE_TARGET_ANCHORS,
+  SOLVE_NODE_BUDGET,
   SPARES_LOCK_FROM,
   hiddenTubeCount,
   levelConfig,
+  shuffleMix,
+  shuffleTarget,
 } from './levels'
+import { generateLevel } from './generator'
+import { randomWinRate } from './difficulty'
 
 /**
  * The validated curve as `colours/spare/scramble`. This is the contract the
@@ -67,8 +83,11 @@ describe('levels', () => {
       CURVE.slice(0, LEVELS.length),
     )
     expect(LEVELS).toHaveLength(40) // the hand-tuned boards are never re-rolled
-    expect(MAX_LEVEL).toBe(100)
-    expect(CURVE).toHaveLength(MAX_LEVEL)
+    // Ticket 25: the reverse-scrambled curve ends at 100 and is frozen; the
+    // shuffled tier runs on to MAX_LEVEL.
+    expect(CLIMB_LAST).toBe(100)
+    expect(MAX_LEVEL).toBe(9999)
+    expect(CURVE).toHaveLength(CLIMB_LAST)
     expect(CLIMB_FROM).toBe(51)
     expect(CLIMB_SCRAMBLE).toBe(54)
     expect(LATE_BOARD_MIN_MULTI).toBe(11)
@@ -97,7 +116,7 @@ describe('levels', () => {
       // Generated tubes leave room for the appended spare under two rows.
       expect(config.colors + config.emptyTubes).toBeLessThan(MAX_TWO_ROW_TUBES)
     }
-    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+    for (let level = CLIMB_FROM; level <= CLIMB_LAST; level++) {
       const config = levelConfig(level)
       expect(config.colors, `level ${level}`).toBe(11)
       expect(config.scramble, `level ${level}`).toBe(CLIMB_SCRAMBLE)
@@ -118,7 +137,7 @@ describe('levels', () => {
     expect(hiddenTubeCount(MAX_LEVEL)).toBe(11)
 
     let previous = hiddenTubeCount(50)
-    for (let level = CLIMB_FROM; level <= MAX_LEVEL; level++) {
+    for (let level = CLIMB_FROM; level <= CLIMB_LAST; level++) {
       const count = hiddenTubeCount(level)
       expect(count, `level ${level}`).toBeGreaterThanOrEqual(previous)
       expect(count, `level ${level}`).toBeLessThanOrEqual(LATE_BOARD_MIN_MULTI)
@@ -135,7 +154,7 @@ describe('levels', () => {
   })
 
   it('never removes a spare tube and never jumps backwards in colour', () => {
-    for (let level = 1; level <= MAX_LEVEL; level++) {
+    for (let level = 1; level <= CLIMB_LAST; level++) {
       const config = levelConfig(level)
       expect(config.emptyTubes, `level ${level}`).toBe(2)
       if (level > 1) {
@@ -173,7 +192,7 @@ describe('levels', () => {
   })
 
   it('adds one colour at a time, below the previous tier end', () => {
-    for (let level = 2; level <= MAX_LEVEL; level++) {
+    for (let level = 2; level <= CLIMB_LAST; level++) {
       const current = levelConfig(level)
       const previous = levelConfig(level - 1)
       if (current.colors > previous.colors) {
@@ -198,5 +217,94 @@ describe('levels', () => {
 
   it('truncates fractional levels', () => {
     expect(levelConfig(2.9)).toBe(LEVELS[1])
+  })
+})
+
+/**
+ * The shuffled tier's ramp (ticket 25). Every constant is pinned: a change
+ * re-rolls boards people may have played, so it is a content decision.
+ * Calibrated by the ticket-25 probe over levels 101–1000, recorded in the
+ * ticket: shipped 51–100 median random-win 0.635, full shuffle about 0.03.
+ */
+describe('shuffled tier ramp', () => {
+  it('pins the shuffled tier constants', () => {
+    expect(SHUFFLE_FROM).toBe(101)
+    expect(SHUFFLE_FROM).toBe(CLIMB_LAST + 1)
+    expect(SHUFFLE_COLORS).toBe(11)
+    expect(SHUFFLE_SPARES).toBe(2)
+    expect(SHUFFLE_COLORS + SHUFFLE_SPARES + 1).toBe(MAX_TWO_ROW_TUBES)
+    expect(SHUFFLE_TARGET_ANCHORS).toEqual([
+      [101, 0.5],
+      [400, 0.03],
+      [600, 0.015],
+    ])
+    expect(SHUFFLE_MIX_ANCHORS).toEqual([
+      [101, 9],
+      [400, 24],
+    ])
+    expect(SHUFFLE_FULL_FROM).toBe(400)
+    expect(SHUFFLE_CANDIDATES).toBe(6)
+    expect(SHUFFLE_MAX_DRAWS).toBe(256)
+    expect(SCORE_PLAYOUTS).toBe(100)
+    expect(SCORE_MAX_STEPS).toBe(300)
+    expect(SOLVE_NODE_BUDGET).toBe(5000)
+  })
+
+  it('keeps the shuffled tier on the climb config for its fallback and board shape', () => {
+    // levelConfig past 100 is the level-100 reverse config: the fallback the
+    // generator uses if no candidate solves, and the 11/2 board shape.
+    expect(levelConfig(SHUFFLE_FROM)).toEqual(levelConfig(CLIMB_LAST))
+    expect(levelConfig(MAX_LEVEL)).toEqual(levelConfig(CLIMB_LAST))
+    expect(hiddenTubeCount(SHUFFLE_FROM)).toBe(11)
+    expect(hiddenTubeCount(MAX_LEVEL)).toBe(11)
+  })
+
+  it('lowers the target win rate monotonically to the plateau, then holds', () => {
+    expect(shuffleTarget(SHUFFLE_FROM)).toBe(0.5)
+    expect(shuffleTarget(400)).toBeCloseTo(0.03, 10)
+    expect(shuffleTarget(600)).toBeCloseTo(0.015, 10)
+    let previous = shuffleTarget(SHUFFLE_FROM)
+    for (let level = SHUFFLE_FROM + 1; level <= 1200; level++) {
+      const target = shuffleTarget(level)
+      expect(target, `level ${level}`).toBeLessThanOrEqual(previous)
+      if (level <= 600) expect(target, `level ${level}`).toBeLessThan(previous)
+      previous = target
+    }
+    expect(shuffleTarget(MAX_LEVEL)).toBe(shuffleTarget(600))
+  })
+
+  it('raises the mix with the level, then switches to a full shuffle', () => {
+    expect(shuffleMix(SHUFFLE_FROM)).toBe(9)
+    expect(shuffleMix(SHUFFLE_FULL_FROM - 1)).toBe(24)
+    let previous = 0
+    for (let level = SHUFFLE_FROM; level < SHUFFLE_FULL_FROM; level++) {
+      const mix = shuffleMix(level) as number
+      expect(mix, `level ${level}`).toBeGreaterThanOrEqual(previous)
+      previous = mix
+    }
+    expect(shuffleMix(SHUFFLE_FULL_FROM)).toBeNull()
+    expect(shuffleMix(MAX_LEVEL)).toBeNull()
+  })
+
+  it('measures sampled boards close to the target', () => {
+    // An independent re-measure (1000 playouts, a different seed from the
+    // build's) of ten-level windows. The probe recorded window medians within
+    // a log ratio of 0.55 of the target; the tolerance is a factor of two.
+    // Scores below 1% are floored there, where playouts cannot resolve them.
+    const TOLERANCE = Math.log(2)
+    const floor = 0.01
+    for (const start of [101, 200, 300, 400, 600, 1000]) {
+      const scores: number[] = []
+      const targets: number[] = []
+      for (let level = start; level < start + 10; level++) {
+        const { board } = generateLevel(level)
+        scores.push(randomWinRate(board, { playouts: 1000, maxSteps: 300, seed: 0xabc + level }))
+        targets.push(shuffleTarget(level))
+      }
+      const median = (values: number[]): number =>
+        [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+      const ratio = Math.log(Math.max(median(scores), floor) / Math.max(median(targets), floor))
+      expect(Math.abs(ratio), `window from ${start}`).toBeLessThanOrEqual(TOLERANCE)
+    }
   })
 })
